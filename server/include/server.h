@@ -1,8 +1,35 @@
 #ifndef SERVER_H
 #define SERVER_H
 
-// Khởi động server (blocking)
-void server_start(int port);
+#include <pthread.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+#define MAX_CONNS 1024
+#define BUF_SIZE 8192
+
+typedef enum { ST_CONNECTED, ST_AUTH, ST_UPLOADING, ST_DOWNLOADING } ConnState;
+
+typedef struct {
+  int sockfd;
+  ConnState state;
+  pthread_mutex_t write_lock; // mutex bảo vệ write/send
+  int current_request_id;
+
+  // Auth info
+  time_t last_active;
+  bool logged_in;
+  uint32_t user_id;
+  char auth_token[256];
+  time_t auth_expiry;
+
+  bool busy_worker;
+  uint8_t buf[BUF_SIZE];
+  size_t buf_len;
+} Conn;
+
+extern Conn *connections[MAX_CONNS];  // Global connection array
+int server_start(int port);
 
 // Yêu cầu server dừng (an toàn)
 void server_stop();

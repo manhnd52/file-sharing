@@ -2,15 +2,15 @@
 #ifndef ROUTER_H
 #define ROUTER_H
 
-#include "protocol.h"
+#include "frame.h"
+#include "server.h"
+// Handler function pointer
+typedef void (*FrameHandler)(Conn *sc, Frame *f);
 
-// Định nghĩa hàm handler
-typedef void (*PacketHandler)(Packet* pkt, int client_sock);
+// Register a handler for a specific message type (MSG_AUTH, MSG_CMD, MSG_DATA)
+void register_route(MsgType type, FrameHandler handler);
 
-// Đăng ký route
-void register_route(PacketType type, PacketHandler handler);
-
-// Xử lý gói tin
-void handle_packet(Packet* pkt, int client_sock);
+// Dispatch packet to registered handler
+void router_handle(Conn *sc, Frame *f);
 
 #endif

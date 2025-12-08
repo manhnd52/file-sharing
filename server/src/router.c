@@ -2,20 +2,22 @@
 #include "router.h"
 #include <stdio.h>
 
-#define MAX_ROUTES 256
+#define MAX_MSG_TYPE 256
 
-static PacketHandler routes[MAX_ROUTES] = {0};
+static FrameHandler routes[MAX_MSG_TYPE] = {0};
 
-void register_route(PacketType type, PacketHandler handler) {
-    routes[type] = handler;
+void register_route(MsgType type, FrameHandler handler) {
+    if(type < MAX_MSG_TYPE) {
+        routes[type] = handler;
+    }
 }
 
-void handle_packet(Packet* pkt, int client_sock) {
-    if (pkt->type < MAX_ROUTES && routes[pkt->type]) {
-        printf("HANDLE: %d\n", pkt->type);
-        routes[pkt->type](pkt, client_sock);
+void router_handle(Conn *sc, Frame *f) {
+    printf("MSG TYPE %d\n", f->msg_type);
+    if (f->msg_type < MAX_MSG_TYPE && routes[f->msg_type]) {
+        routes[f->msg_type](sc, f);
     } else {
-        printf("Unknown packet type: %d\n", pkt->type);
-        // Có thể gửi thông báo lỗi cho client
+        printf("No handler for msg_type: %d\n", f->msg_type);
+        // Optional: send error response?
     }
 }
