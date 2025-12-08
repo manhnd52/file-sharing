@@ -41,23 +41,39 @@ void register_cmd_route(const char *cmd, CMDHandler handler) {
     }
 }
 
-void router_handle(Conn *c, Frame *f) {
+void router_handle(Conn *c, Frame *req) {
     // AUTH guard: only allow first AUTH per connection
-    if (f->msg_type == MSG_AUTH) {
+    int request_id = 0;
+    switch (req->msg_type) {
+        case MSG_AUTH:
+            request_id = req->header.auth.request_id;
+            break;
+        case MSG_CMD:
+            request_id = req->header.cmd.request_id;
+            break;
+        case MSG_DATA:
+            request_id = req->header.data.request_id;
+            break;
+        default:
+            break;
+    }
+
+    printf("Router: Handling msg_type=%d, request_id=%d\n", req->msg_type, request_id);
+    if (req->msg_type == MSG_AUTH) {
         if (c->logged_in) {
             Frame resp;
-            build_respond_frame(&resp, ntohl(f->header.auth.request_id), STATUS_NOT_OK,
+            build_respond_frame(&resp, request_id, STATUS_NOT_OK,
                                 "{\"error\":\"already_authed\"}");
             send_data(c, resp);
             return;
         }
         // If a dedicated AUTH handler is registered, dispatch; else reject
         if (authHandler) {
-            authHandler(c, f);
+            authHandler(c, req);
         } else {
             printf("No handler for AUTH\n");
             Frame resp;
-            build_respond_frame(&resp, ntohl(f->header.auth.request_id), STATUS_NOT_OK,
+            build_respond_frame(&resp, request_id, STATUS_NOT_OK,
                                 "{\"error\":\"Server Error\"}");
             send_data(c, resp);
         }
@@ -65,13 +81,13 @@ void router_handle(Conn *c, Frame *f) {
     }
 
     // Special handling for CMD type - route by JSON "cmd" field
-    if (f->msg_type == MSG_CMD && f->payload_len > 0) {
+    if (req->msg_type == MSG_CMD && req->payload_len > 0) {
         // Bổ sung Json parsing để lấy "cmd"
-        cJSON *root = cJSON_Parse((char *)f->payload);
+        cJSON *root = cJSON_Parse((char *)req->payload);
         
         if (c->logged_in == false) {
             Frame resp;
-            build_respond_frame(&resp, ntohl(f->header.cmd.request_id), STATUS_NOT_OK,
+            build_respond_frame(&resp, request_id, STATUS_NOT_OK,
                                 "{\"error\":\"not_authenticated\"}");
             send_data(c, resp);
             cJSON_Delete(root);
@@ -81,7 +97,7 @@ void router_handle(Conn *c, Frame *f) {
 
         if (!root) {
             Frame resp;
-            build_respond_frame(&resp, ntohl(f->header.cmd.request_id), STATUS_NOT_OK,
+            build_respond_frame(&resp, ntohl(req->header.cmd.request_id), STATUS_NOT_OK,
                                 "{\"error\":\"invalid_json\"}");
             send_data(c, resp);
             cJSON_Delete(root);
@@ -95,12 +111,12 @@ void router_handle(Conn *c, Frame *f) {
             // Find matching CMD handler
             for (int i = 0; i < cmd_route_count; i++) {
                 if (strcmp(cmd_routes[i].cmd, cmd) == 0) {
-                    cmd_routes[i].handler(c, f, cmd);
+                    cmd_routes[i].handler(c, req, cmd);
                     return;
                 }
             }
 
-            send_error_response(c, f->header.cmd.request_id,
+            send_error_response(c, req->header.cmd.request_id,
                                 "{\"error\":\"unknown_command\"}");
                         
             // TODO: Send error response
@@ -109,10 +125,10 @@ void router_handle(Conn *c, Frame *f) {
     }
     
     // Default routing by msg_type
-    if (f->msg_type < MAX_MSG_TYPE && routes[f->msg_type]) {
-        routes[f->msg_type](c, f);
+    if (req->msg_type < MAX_MSG_TYPE && routes[req->msg_type]) {
+        routes[req->msg_type](c, req);
     } else {
-        printf("No handler for msg_type: %d\n", f->msg_type);
+        printf("No handler for msg_type: %d\n", req->msg_type);
         // Optional: send error response?
     }
 }

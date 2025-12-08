@@ -11,31 +11,40 @@
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 // Global connection array
 Conn *connections[MAX_CONNS];
 
+// --- Helper functions ---
+static void conn_init(Conn *c, int sockfd) {
+  c->sockfd = sockfd;
+  c->state = ST_CONNECTED;
+  c->current_request_id = 0;
+  c->logged_in = false;
+  c->user_id = 0;
+  c->last_active = time(NULL);
+  pthread_mutex_init(&c->write_lock, NULL);
+  pthread_mutex_init(&c->read_lock, NULL);
+  c->buf_len = 0;
+}
+
+static void conn_cleanup(Conn *c) {
+  if (!c)
+    return;
+  if (c->sockfd >= 0) {
+    close(c->sockfd);
+    c->sockfd = -1;
+  }
+  pthread_mutex_destroy(&c->write_lock);
+  pthread_mutex_destroy(&c->read_lock);
+  free(c);
+}
+
 // --- Handler functions ---
 static void handle_data(Conn *sc, Frame *f) {
   printf("DATA received fd=%d\n", sc->sockfd);
-}
-
-static void handle_auth(Conn *sc, Frame *f) {
-  printf("AUTH received fd=%d\n", sc->sockfd);
-  if (sc->logged_in) {
-    Frame resp;
-    build_respond_frame(&resp, ntohl(f->header.auth.request_id), STATUS_NOT_OK,
-                        "{\"error\":\"already_authed\"}");
-    send_data(sc, resp);
-    return;
-  }
-
-  sc->logged_in = true; // TODO: replace with real credential check
-  Frame resp;
-  build_respond_frame(&resp, ntohl(f->header.auth.request_id), STATUS_OK,
-                      "{\"status\":\"ok\"}");
-  send_data(sc, resp);
 }
 
 void main_loop(int listen_fd) {
@@ -78,8 +87,7 @@ void main_loop(int listen_fd) {
 
         if (idx >= 0) {
           Conn *c = calloc(1, sizeof(Conn));
-          c->sockfd = client_fd;
-          c->state = ST_CONNECTED;
+          conn_init(c, client_fd);
           connections[idx] = c;
           printf("I/O: New connection fd=%d assigned to slot %d\n", client_fd,
                  idx);
@@ -145,7 +153,6 @@ int server_start(int port) {
   printf("Server listening on port %d\n", port);
   // Register routes by message type
   register_route(MSG_DATA, handle_data);
-  register_route(MSG_AUTH, handle_auth);
 
   memset(connections, 0, sizeof(connections));
   main_loop(listen_fd);

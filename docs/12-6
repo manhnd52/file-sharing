@@ -1,0 +1,3 @@
+Sửa send_frame_bytes để chỉ gửi đúng số byte header cần thiết tương ứng với msg_type.
+Bổ sung xử lý MSG_DATA và MSG_CMD trong resp_reader_thread hoặc cơ chế callback linh hoạt hơn.
+Thêm __attribute__((packed)) cho các struct header.
