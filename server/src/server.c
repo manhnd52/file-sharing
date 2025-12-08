@@ -1,5 +1,6 @@
 #include "frame.h"
 #include "router.h"
+#include "handlers/cmd_handler.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <pthread.h>
@@ -16,21 +17,26 @@
 Conn *connections[MAX_CONNS];
 
 // --- Handler functions ---
-static void handle_cmd(Conn *sc, Frame *f) {
-  printf("CMD received on fd %d\n", sc->sockfd);
-  // PING is handled by server_conn_read_frame, so this is for other CMDs
-}
-
 static void handle_data(Conn *sc, Frame *f) {
   printf("DATA received fd=%d\n", sc->sockfd);
 }
 
 static void handle_auth(Conn *sc, Frame *f) {
   printf("AUTH received fd=%d\n", sc->sockfd);
-}
+  if (sc->logged_in) {
+    Frame resp;
+    build_respond_frame(&resp, ntohl(f->header.auth.request_id), STATUS_NOT_OK,
+                        "{\"error\":\"already_authed\"}");
+    send_data(sc, resp);
+    return;
+  }
 
-// --- Dispatcher ---
-void handle_frame(Conn *c, Frame *f) { router_handle(c, f); }
+  sc->logged_in = true; // TODO: replace with real credential check
+  Frame resp;
+  build_respond_frame(&resp, ntohl(f->header.auth.request_id), STATUS_OK,
+                      "{\"status\":\"ok\"}");
+  send_data(sc, resp);
+}
 
 void main_loop(int listen_fd) {
   while (1) {
@@ -89,10 +95,10 @@ void main_loop(int listen_fd) {
       Conn *c = connections[i];
       if (c && FD_ISSET(c->sockfd, &read_fds)) {
         Frame f;
-        int result = recv_frame(c->sockfd, &f);
+        int result = fetch_data(c, &f);
         if (result == 0) {
           // Frame nhận thành công
-          handle_frame(c, &f);
+          router_handle(c, &f);
         } else {
           printf("Result Error: %d\n", result);
           // Lỗi khi nhận frame hoặc client ngắt kết nối
@@ -137,13 +143,35 @@ int server_start(int port) {
   }
 
   printf("Server listening on port %d\n", port);
-
-  // Register routes
-  register_route(MSG_CMD, handle_cmd);
+  // Register routes by message type
   register_route(MSG_DATA, handle_data);
   register_route(MSG_AUTH, handle_auth);
 
   memset(connections, 0, sizeof(connections));
   main_loop(listen_fd);
   return 0;
+}
+
+
+
+// Safely send, receive data
+int send_data(Conn *c, Frame f) {
+  pthread_mutex_lock(&c->write_lock);
+  int res = send_frame(c->sockfd, &f);
+  pthread_mutex_unlock(&c->write_lock);
+  return res;
+}
+
+int fetch_data(Conn *c, Frame *f) {
+  pthread_mutex_lock(&c->read_lock);
+  int recv = recv_frame(c->sockfd, f);
+  pthread_mutex_unlock(&c->read_lock);
+  return recv;
+}
+
+int send_error_response(Conn *c, uint32_t request_id,
+                       const char *payload) {
+  Frame resp;
+  build_respond_frame(&resp, request_id, STATUS_NOT_OK, payload);
+  return send_data(c, resp);
 }

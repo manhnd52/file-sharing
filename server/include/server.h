@@ -14,6 +14,7 @@ typedef struct {
   int sockfd;
   ConnState state;
   pthread_mutex_t write_lock; // mutex bảo vệ write/send
+  pthread_mutex_t read_lock;  // mutex bảo vệ read/recv
   int current_request_id;
 
   // Auth info
@@ -30,7 +31,10 @@ typedef struct {
 
 extern Conn *connections[MAX_CONNS];  // Global connection array
 int server_start(int port);
-
+int send_data(Conn *c, Frame f);
+int fetch_data(Conn *c, Frame *f);
+int send_error_response(Conn *c, uint32_t request_id,
+                       const char *payload);
 // Yêu cầu server dừng (an toàn)
 void server_stop();
 

@@ -1,9 +1,9 @@
 CC = gcc
 CFLAGS = -Iinclude -I../protocol -Wall
-LDFLAGS = -lsqlite3 -lpthread   # Thêm thư viện SQLite và pthread
+LDFLAGS = -lsqlite3 -lpthread -lm   # Thêm thư viện SQLite, pthread, và math (cho cJSON)
 # LDFLAGS means: Linker Flags, used to specify libraries to link against during the linking stage of compilation.
 
-SRC = $(wildcard src/*.c src/handlers/*.c src/services/*.c ../protocol/frame.c ../protocol/connect.c)
+SRC = $(wildcard src/*.c src/handlers/*.c src/services/*.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c)
 OBJ = $(patsubst src/%.c, build/%.o, $(SRC))
 OBJ := $(patsubst src/handlers/%.c, build/handlers/%.o, $(OBJ))
 OBJ := $(patsubst src/services/%.c, build/services/%.o, $(OBJ))
