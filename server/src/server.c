@@ -17,6 +17,49 @@
 // Global connection array
 Conn *connections[MAX_CONNS];
 
+// --- Work queue for frames ---
+typedef struct {
+  Conn *conn;
+  Frame frame;
+} WorkItem;
+
+#define QUEUE_CAPACITY 1024
+static WorkItem work_queue[QUEUE_CAPACITY];
+static int q_head = 0; // dequeue index
+static int q_tail = 0; // enqueue index
+static int q_size = 0;
+static pthread_mutex_t q_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t q_not_empty = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t q_not_full = PTHREAD_COND_INITIALIZER;
+
+static bool queue_push(WorkItem item) {
+  pthread_mutex_lock(&q_mutex);
+  while (q_size == QUEUE_CAPACITY) {
+    // queue full, wait until consumer pops
+    pthread_cond_wait(&q_not_full, &q_mutex); // trong lúc chờ q_not_full, thả mutex
+  }
+  work_queue[q_tail] = item;
+  q_tail = (q_tail + 1) % QUEUE_CAPACITY;
+  q_size++;
+  pthread_cond_signal(&q_not_empty);
+  pthread_mutex_unlock(&q_mutex);
+  return true;
+}
+
+static bool queue_pop(WorkItem *out) {
+  pthread_mutex_lock(&q_mutex);
+  while (q_size == 0) {
+    // empty, wait for producer
+    pthread_cond_wait(&q_not_empty, &q_mutex); // tương tự bên trên
+  }
+  *out = work_queue[q_head];
+  q_head = (q_head + 1) % QUEUE_CAPACITY;
+  q_size--;
+  pthread_cond_signal(&q_not_full);
+  pthread_mutex_unlock(&q_mutex);
+  return true;
+}
+
 // --- Helper functions ---
 static void conn_init(Conn *c, int sockfd) {
   c->sockfd = sockfd;
@@ -47,7 +90,9 @@ static void handle_data(Conn *sc, Frame *f) {
   printf("DATA received fd=%d\n", sc->sockfd);
 }
 
-void main_loop(int listen_fd) {
+// Listener thread: accept sockets and read frames, enqueue to work queue
+static void *listener_thread(void *arg) {
+  int listen_fd = *(int *)arg;
   while (1) {
     // Các fd mà select() theo dõi
     fd_set read_fds;
@@ -105,8 +150,9 @@ void main_loop(int listen_fd) {
         Frame f;
         int result = fetch_data(c, &f);
         if (result == 0) {
-          // Frame nhận thành công
-          router_handle(c, &f);
+          // Enqueue frame for processing by worker
+          WorkItem item = { .conn = c, .frame = f };
+          queue_push(item);
         } else {
           printf("Result Error: %d\n", result);
           // Lỗi khi nhận frame hoặc client ngắt kết nối
@@ -119,6 +165,19 @@ void main_loop(int listen_fd) {
       }
     }
   }
+  return NULL;
+}
+
+// Worker thread: dequeue frames and route to handlers
+static void *worker_thread(void *arg) {
+  (void)arg;
+  while (1) {
+    WorkItem item;
+    if (queue_pop(&item)) {
+      router_handle(item.conn, &item.frame);
+    }
+  }
+  return NULL;
 }
 
 int server_start(int port) {
@@ -155,7 +214,14 @@ int server_start(int port) {
   register_route(MSG_DATA, handle_data);
 
   memset(connections, 0, sizeof(connections));
-  main_loop(listen_fd);
+  // Start listener and worker threads
+  pthread_t th_listener, th_worker;
+  pthread_create(&th_listener, NULL, listener_thread, &listen_fd);
+  pthread_create(&th_worker, NULL, worker_thread, NULL);
+
+  // Join threads (server runs indefinitely) → tạm dừng luồng chính
+  pthread_join(th_listener, NULL);
+  pthread_join(th_worker, NULL);
   return 0;
 }
 

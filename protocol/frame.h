@@ -6,7 +6,7 @@
 
 #define MAX_PAYLOAD 8192
 #define AUTH_TOKEN_SIZE 16
-#define FILEID_SIZE 16
+#define SESSIONID_SIZE 16
 
 typedef enum {
   MSG_CMD = 1,
@@ -14,6 +14,7 @@ typedef enum {
   MSG_DATA = 3,
   MSG_AUTH = 4
 } MsgType;
+
 typedef enum { STATUS_OK = 0, STATUS_NOT_OK = 1 } Status;
 
 // --- header types ---
@@ -28,7 +29,7 @@ typedef struct {
 
 typedef struct {
   uint32_t request_id;
-  uint8_t file_id[FILEID_SIZE];
+  uint8_t session_id[SESSIONID_SIZE];
   uint32_t chunk_index;
   uint32_t chunk_length;
 } __attribute__((packed)) DATAHeader;
@@ -70,7 +71,7 @@ int build_auth_frame(Frame *f, uint32_t request_id,
 int build_respond_frame(Frame *f, uint32_t request_id, Status status,
                         const char *json_payload);
 int build_data_frame(Frame *f, uint32_t request_id,
-                     const uint8_t file_id[FILEID_SIZE], uint32_t chunk_index,
+                     const uint8_t session_id[SESSIONID_SIZE], uint32_t chunk_index,
                      uint32_t chunk_length, const uint8_t *data);
 
 // --- parse frame from buffer ---

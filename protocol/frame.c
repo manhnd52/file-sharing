@@ -77,11 +77,11 @@ int build_respond_frame(Frame *f, uint32_t request_id, Status status,
 // @param data: pointer to chunk data
 // @return 0 on success
 int build_data_frame(Frame *f, uint32_t request_id,
-                     const uint8_t file_id[FILEID_SIZE], uint32_t chunk_index,
+                     const uint8_t session_id[SESSIONID_SIZE], uint32_t chunk_index,
                      uint32_t chunk_length, const uint8_t *data) {
   f->msg_type = MSG_DATA;
   f->header.data.request_id = request_id;
-  memcpy(f->header.data.file_id, file_id, FILEID_SIZE);
+  memcpy(f->header.data.session_id, session_id, SESSIONID_SIZE);
   f->header.data.chunk_index = htonl(chunk_index);
   f->header.data.chunk_length = htonl(chunk_length);
   if (data && chunk_length > 0) {
@@ -131,6 +131,8 @@ int parse_frame(uint8_t *buf, size_t len, Frame *f) {
       break;
     case MSG_DATA:
       f->header.data.request_id = ntohl(f->header.data.request_id);
+      f->header.data.chunk_index = ntohl(f->header.data.chunk_index);
+      f->header.data.chunk_length = ntohl(f->header.data.chunk_length);
       break;
     case MSG_AUTH:
       f->header.auth.request_id = ntohl(f->header.auth.request_id);
