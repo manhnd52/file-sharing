@@ -63,6 +63,7 @@ typedef struct {
   uint8_t payload[MAX_PAYLOAD];
 } Frame;
 
+int get_request_id(Frame *f);
 // --- build frames ---
 int build_cmd_frame(Frame *f, uint32_t request_id, const char *json_payload);
 int build_auth_frame(Frame *f, uint32_t request_id,

@@ -9,7 +9,7 @@
 void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
     cJSON *root = cJSON_Parse((char *)f->payload);
     if (!root) {
-        printf("LIST: Failed to parse JSON payload\n");
+        printf("[CMD:LIST][ERROR] Failed to parse JSON payload (fd=%d, user_id=%d)\n", c->sockfd, c->user_id);
         return;
     }
     
@@ -29,11 +29,12 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
     
     // Send RESPOND
     Frame resp;
-    build_respond_frame(&resp, ntohl(f->header.cmd.request_id), STATUS_OK, json_resp);
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
     
     send_data(c, resp);
     
-    printf("Sended LIST response for path: %s\n", path);
+    printf("[CMD:LIST][SUCCESS] Sent file list for path='%s' (fd=%d, user_id=%d, request_id=%d)\n", 
+           path, c->sockfd, c->user_id, f->header.cmd.request_id);
     
     free(json_resp);
     cJSON_Delete(response);
@@ -42,12 +43,13 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
 
 // Handler for UPLOAD command
 void handle_cmd_upload(Conn *c, Frame *f, const char *cmd) {
-    printf("Handler: UPLOAD command on fd=%d\n", c->sockfd);
+    printf("[CMD:UPLOAD][INFO] Processing UPLOAD request (fd=%d, user_id=%d, request_id=%d)\n", 
+           c->sockfd, c->user_id, ntohl(f->header.cmd.request_id));
     
     // Parse JSON payload
     cJSON *root = cJSON_Parse((char *)f->payload);
     if (!root) {
-        printf("UPLOAD: Failed to parse JSON payload\n");
+        printf("[CMD:UPLOAD][ERROR] Failed to parse JSON payload (fd=%d, user_id=%d)\n", c->sockfd, c->user_id);
         return;
     }
     
@@ -57,7 +59,8 @@ void handle_cmd_upload(Conn *c, Frame *f, const char *cmd) {
     const char *filename = (filename_item && cJSON_IsString(filename_item)) ? filename_item->valuestring : "unknown";
     int file_size = (size_item && cJSON_IsNumber(size_item)) ? size_item->valueint : 0;
     
-    printf("UPLOAD: filename=%s, size=%d bytes\n", filename, file_size);
+    printf("[CMD:UPLOAD][INFO] File metadata: filename='%s', size=%d bytes (fd=%d, user_id=%d)\n", 
+           filename, file_size, c->sockfd, c->user_id);
     
     // Build response
     cJSON *response = cJSON_CreateObject();
@@ -81,7 +84,8 @@ void handle_cmd_upload(Conn *c, Frame *f, const char *cmd) {
 
 // Handler for DOWNLOAD command
 void handle_cmd_download(Conn *c, Frame *f, const char *cmd) {
-    printf("Handler: DOWNLOAD command on fd=%d\n", c->sockfd);
+    printf("[CMD:DOWNLOAD][INFO] Processing DOWNLOAD request (fd=%d, user_id=%d, request_id=%d)\n", 
+           c->sockfd, c->user_id, f->header.cmd.request_id);
     
     // TODO: Parse JSON to get file path
     // TODO: Check file exists and permissions
@@ -90,7 +94,7 @@ void handle_cmd_download(Conn *c, Frame *f, const char *cmd) {
     
     Frame resp;
     const char *json_resp = "{\"status\":\"ok\",\"file_size\":1024}";
-    build_respond_frame(&resp, ntohl(f->header.cmd.request_id), STATUS_OK, json_resp);
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
     
     pthread_mutex_lock(&c->write_lock);
     send_frame(c->sockfd, &resp);
@@ -99,7 +103,8 @@ void handle_cmd_download(Conn *c, Frame *f, const char *cmd) {
 
 // Handler for PING command
 void handle_cmd_ping(Conn *c, Frame *f, const char *cmd) {
-    printf("Handler: PING command on fd=%d\n", c->sockfd);
+    printf("[CMD:PING][INFO] PING received (fd=%d, user_id=%d, request_id=%d)\n", 
+           c->sockfd, c->user_id, f->header.cmd.request_id);
     
     // Build response
     cJSON *response = cJSON_CreateObject();
@@ -108,7 +113,7 @@ void handle_cmd_ping(Conn *c, Frame *f, const char *cmd) {
     char *json_resp = cJSON_PrintUnformatted(response);
     
     Frame resp;
-    build_respond_frame(&resp, ntohl(f->header.cmd.request_id), STATUS_OK, json_resp);
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
     
     pthread_mutex_lock(&c->write_lock);
     send_frame(c->sockfd, &resp);
@@ -120,7 +125,8 @@ void handle_cmd_ping(Conn *c, Frame *f, const char *cmd) {
 
 // Handler for MKDIR command
 void handle_cmd_mkdir(Conn *c, Frame *f, const char *cmd) {
-    printf("Handler: MKDIR command on fd=%d\n", c->sockfd);
+    printf("[CMD:MKDIR][INFO] Processing MKDIR request (fd=%d, user_id=%d, request_id=%d)\n", 
+           c->sockfd, c->user_id, f->header.cmd.request_id);
     
     // TODO: Parse JSON to get directory path
     // TODO: Create directory
@@ -128,7 +134,7 @@ void handle_cmd_mkdir(Conn *c, Frame *f, const char *cmd) {
     
     Frame resp;
     const char *json_resp = "{\"status\":\"ok\",\"message\":\"Directory created\"}";
-    build_respond_frame(&resp, ntohl(f->header.cmd.request_id), STATUS_OK, json_resp);
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
     
     pthread_mutex_lock(&c->write_lock);
     send_frame(c->sockfd, &resp);

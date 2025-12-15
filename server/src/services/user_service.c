@@ -5,7 +5,6 @@
 #include <stdbool.h>
 
 #include "database.h"
-#include "handlers/user.h"
 #include "services/user_service.h"
 #include "models/user.h"
 
@@ -76,4 +75,30 @@ User get_user_by_id(int user_id) {
 
     sqlite3_finalize(stmt);
     return user;
+}
+
+int user_verify_credentials(const char* username, const char* password) {
+    if (!db_global || !username || !password) return 0;
+
+    const char* sql = "SELECT id FROM users WHERE username = ? AND password = ?";
+    sqlite3_stmt* stmt;
+    
+    if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "[DB] Failed to prepare verify statement: %s\n", sqlite3_errmsg(db_global));
+        return 0;
+    }
+
+    sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
+    sqlite3_bind_text(stmt, 2, password, -1, SQLITE_STATIC);
+
+    int user_id = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        user_id = sqlite3_column_int(stmt, 0);
+        printf("[AUTH] User '%s' authenticated successfully, user_id=%d\n", username, user_id);
+    } else {
+        printf("[AUTH] Authentication failed for user '%s'\n", username);
+    }
+
+    sqlite3_finalize(stmt);
+    return user_id;
 }

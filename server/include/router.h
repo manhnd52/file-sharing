@@ -17,6 +17,9 @@ void register_route(MsgType type, FrameHandler handler);
 // Register a CMD handler for a specific command string
 void register_cmd_route(const char *cmd, CMDHandler handler);
 
+// Register AUTH handler
+void register_auth_handler(AUTHHandler handler);
+
 // Dispatch packet to registered handler
 void router_handle(Conn *sc, Frame *f);
 

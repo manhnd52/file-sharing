@@ -85,11 +85,6 @@ static void conn_cleanup(Conn *c) {
   free(c);
 }
 
-// --- Handler functions ---
-static void handle_data(Conn *sc, Frame *f) {
-  printf("DATA received fd=%d\n", sc->sockfd);
-}
-
 // Listener thread: accept sockets and read frames, enqueue to work queue
 static void *listener_thread(void *arg) {
   int listen_fd = *(int *)arg;
@@ -134,11 +129,11 @@ static void *listener_thread(void *arg) {
           Conn *c = calloc(1, sizeof(Conn));
           conn_init(c, client_fd);
           connections[idx] = c;
-          printf("I/O: New connection fd=%d assigned to slot %d\n", client_fd,
-                 idx);
+          printf("[SERVER][INFO] New connection accepted: fd=%d, slot=%d (total_connections=%d/%d)\n", 
+                 client_fd, idx, idx+1, MAX_CONNS);
         } else {
-          printf("I/O: Max connections reached, closing client fd=%d\n",
-                 client_fd);
+          printf("[SERVER][WARN] Connection limit reached, rejecting fd=%d (max=%d)\n",
+                 client_fd, MAX_CONNS);
           close(client_fd);
         }
       }
@@ -148,16 +143,17 @@ static void *listener_thread(void *arg) {
       Conn *c = connections[i];
       if (c && FD_ISSET(c->sockfd, &read_fds)) {
         Frame f;
-        int result = fetch_data(c, &f);
+        int result = read_data(c, &f);
         if (result == 0) {
           // Enqueue frame for processing by worker
           WorkItem item = { .conn = c, .frame = f };
           queue_push(item);
         } else {
-          printf("Result Error: %d\n", result);
+          printf("[SERVER][ERROR] Frame read failed: error_code=%d (fd=%d, user_id=%d)\n", 
+                 result, c->sockfd, c->user_id);
           // Lỗi khi nhận frame hoặc client ngắt kết nối
-          printf("I/O: recv_frame failed on fd=%d, closing connection\n",
-                 c->sockfd);
+          printf("[SERVER][INFO] Closing connection due to read error (fd=%d, user_id=%d)\n",
+                 c->sockfd, c->user_id);
           close(c->sockfd);
           free(c);
           connections[i] = NULL;
@@ -211,7 +207,6 @@ int server_start(int port) {
 
   printf("Server listening on port %d\n", port);
   // Register routes by message type
-  register_route(MSG_DATA, handle_data);
 
   memset(connections, 0, sizeof(connections));
   // Start listener and worker threads
@@ -225,8 +220,6 @@ int server_start(int port) {
   return 0;
 }
 
-
-
 // Safely send, receive data
 int send_data(Conn *c, Frame f) {
   pthread_mutex_lock(&c->write_lock);
@@ -235,7 +228,7 @@ int send_data(Conn *c, Frame f) {
   return res;
 }
 
-int fetch_data(Conn *c, Frame *f) {
+int read_data(Conn *c, Frame *f) {
   pthread_mutex_lock(&c->read_lock);
   int recv = recv_frame(c->sockfd, f);
   pthread_mutex_unlock(&c->read_lock);

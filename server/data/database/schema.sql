@@ -6,6 +6,12 @@ CREATE TABLE IF NOT EXISTS users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Seed data: users
+INSERT INTO users (username, password) VALUES
+('demo', 'demo'),
+('alice', 'alice123'),
+('bob', 'bob456');
+
 -- Table: sessions
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

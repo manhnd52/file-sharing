@@ -94,6 +94,21 @@ int build_data_frame(Frame *f, uint32_t request_id,
   return 0;
 }
 
+int get_request_id(Frame *f) {
+  if (!f) return -1;
+  switch (f->msg_type) {
+    case MSG_CMD:
+      return f->header.cmd.request_id;
+    case MSG_RESPOND:
+      return f->header.resp.request_id;
+    case MSG_DATA:
+      return f->header.data.request_id;
+    case MSG_AUTH:
+      return f->header.auth.request_id;
+    default:
+      return -1;
+  }
+}
 // --- parse frame ---
 int parse_frame(uint8_t *buf, size_t len, Frame *f) {
   if (len < MST_TYPE_SIZE)
