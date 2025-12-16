@@ -1,2 +1,1 @@
-- [] Viết docs về database
-- [] Viết docs về kiến trúc của server
+- [] Check token cho gói AUTH → sau khi check xong thì gán vào Conn userId;

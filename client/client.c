@@ -175,10 +175,7 @@ int main(int argc, char *argv[]) {
   // Chờ sessionId
   pthread_mutex_lock(&g_lock);
   if (!g_session_ready) {
-    struct timespec ts;
-    clock_gettime(CLOCK_REALTIME, &ts);
-    ts.tv_sec += 3; // wait up to 3s
-    pthread_cond_timedwait(&g_cond, &g_lock, &ts);
+    pthread_cond_wait(&g_cond, &g_lock);
   }
   int ready = g_session_ready;
   uint8_t sid_copy[SESSIONID_SIZE];

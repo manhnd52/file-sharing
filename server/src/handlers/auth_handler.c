@@ -5,7 +5,10 @@
 #include "frame.h"
 #include "server.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <time.h>
 
 void handle_login(Conn *c, Frame *f) {
     if (!c || !f || f->msg_type != MSG_CMD) {
@@ -59,11 +62,29 @@ void handle_login(Conn *c, Frame *f) {
         c->logged_in = true;
         c->user_id = user_id;
         
-        // Build success response
-        char payload[256];
+        // Create session token (expires in 24 hours)
+        char* token = user_create_session_token(user_id, 24);
+        if (!token) {
+            Frame resp;
+            build_respond_frame(&resp, request_id, STATUS_NOT_OK,
+                              "{\"error\":\"token_creation_failed\"}");
+            send_data(c, resp);
+            cJSON_Delete(root);
+            printf("[AUTH:LOGIN][ERROR] Failed to create token for user_id=%d (fd=%d)\n", 
+                   user_id, c->sockfd);
+            return;
+        }
+        
+        // Store token in connection
+        strncpy(c->auth_token, token, sizeof(c->auth_token) - 1);
+        c->auth_token[sizeof(c->auth_token) - 1] = '\0';
+        c->auth_expiry = time(NULL) + (24 * 3600); // 24 hours from now
+        
+        // Build success response with token
+        char payload[512];
         snprintf(payload, sizeof(payload), 
-                "{\"success\":true,\"user_id\":%d,\"username\":\"%s\"}",
-                user_id, username);
+                "{\"success\":true,\"user_id\":%d,\"username\":\"%s\",\"token\":\"%s\",\"expires_in\":86400}",
+                user_id, username, token);
         
         Frame resp;
         build_respond_frame(&resp, request_id, STATUS_OK, payload);
@@ -72,8 +93,10 @@ void handle_login(Conn *c, Frame *f) {
         // Update connection state
         c->logged_in = true;
         
-        printf("[AUTH:LOGIN][SUCCESS] User authenticated: username='%s', user_id=%d (fd=%d)\n", 
-               username, user_id, c->sockfd);
+        printf("[AUTH:LOGIN][SUCCESS] User authenticated: username='%s', user_id=%d, token=%s (fd=%d)\n", 
+               username, user_id, token, c->sockfd);
+        
+        free(token);
     } else {
         // Authentication failed
         Frame resp;
