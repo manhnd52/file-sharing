@@ -251,21 +251,19 @@ int recv_frame(int sockfd, Frame *f) {
 
   f->total_length = ntohl(length);
 
-  printf("Receiving frame id: %u\n", f->header.cmd.request_id);
-
   // Safety check for max payload
   if (f->total_length > MAX_PAYLOAD + 100) {
-    printf("Frame too large: %u\n", f->total_length);
+    printf("[FRAME] Frame too large: %u\n", f->total_length);
     return -2; // Too large
   }
   uint8_t *buf = malloc(f->total_length); // chứa type, header + payload
   if (!buf) {
-    printf("Failed to allocate memory for frame buffer\n");
+    printf("[FRAME] Failed to allocate memory for frame buffer\n");
     return -1;
   }
 
   if (read_exact(sockfd, buf, f->total_length) != f->total_length) {
-    printf("Failed to read frame data\n");
+    printf("[FRAME] Failed to read frame data\n");
     free(buf);
     return -1;
   }

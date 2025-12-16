@@ -40,8 +40,6 @@ static int connect_send_frame(Connect *c, Frame *f, resp_callback cb){
     pthread_mutex_unlock(&c->pending_lock);
     if(!inserted) return -1;
 
-    if(!inserted) return -1;
-
     // Update last sent time
     c->last_sent_time = time(NULL);
 
@@ -87,14 +85,22 @@ static void *resp_reader_thread_func(void *arg){
             rid = resp.header.data.request_id;
         }
 
+        printf("[DEBUG] Received response with request_id=%u, msg_type=%d\n", rid, resp.msg_type);
+
         pthread_mutex_lock(&c->pending_lock);
 
+        int found = 0;
         for(int i=0; i < MAX_PENDING_REQUESTS; i++){
             if(c->pending[i].in_use && c->pending[i].request_id == rid){
+                printf("[DEBUG] Found matching pending request at index %d\n", i);
                 if(c->pending[i].cb) c->pending[i].cb(&resp);
                 c->pending[i].in_use = 0;
+                found = 1;
                 break;
             }
+        }
+        if(!found) {
+            printf("[DEBUG] No matching pending request found for request_id=%u\n", rid);
         }
         pthread_mutex_unlock(&c->pending_lock);
     }
