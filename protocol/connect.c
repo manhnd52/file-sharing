@@ -108,18 +108,18 @@ static void *resp_reader_thread_func(void *arg){
     return NULL;
 }
 
+
 // --- heartbeat thread ---
 static void *heartbeat_thread_func(void *arg){
     Connect *c = (Connect*)arg;
     while(c->keep_alive){
         sleep(1);
         time_t now = time(NULL);
+        // Tính theo giây
         if(difftime(now, c->last_sent_time) >= HEARTBEAT_INTERVAL){
             // Send PING
             Frame f;
-            // Payload: {"cmd":"PING"}
             const char *ping_json = "{\"cmd\":\"PING\"}";
-            // Note: request_id will be filled by connect_send_frame
             if (build_cmd_frame(&f, generate_request_id(c), ping_json) == 0){
                 _send_cmd(c, &f, NULL);
                 printf("Heartbeat: PING sent\n");

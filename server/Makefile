@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Iinclude -I../protocol -Wall
+CFLAGS = -Iinclude -I../protocol -Wall 
 LDFLAGS = -lsqlite3 -lpthread -lm   # Thêm thư viện SQLite, pthread, và math (cho cJSON)
 # LDFLAGS means: Linker Flags, used to specify libraries to link against during the linking stage of compilation.
 

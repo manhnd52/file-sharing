@@ -13,6 +13,7 @@
 
 typedef struct Connect Connect;
 typedef void (*resp_callback)(Frame *resp);
+typedef void (*disconnect_cb)(int status);
 
 struct Connect {
     int sockfd;
@@ -29,6 +30,7 @@ struct Connect {
     uint32_t request_counter;
     pthread_mutex_t request_lock;
 
+    
     // Heartbeat
     time_t last_sent_time;
     int keep_alive; // 1: running, 0: stop
@@ -38,7 +40,7 @@ struct Connect {
     int (*send_auth)(Connect *c, Frame *f, resp_callback cb);
     int (*send_cmd)(Connect *c, Frame *f, resp_callback cb);
     int (*send_data)(Connect *c, Frame *f, resp_callback cb);
-
+    disconnect_cb disconnect_cb;
     void (*destroy)(Connect *c);
 };
 

@@ -9,7 +9,7 @@
 #define MAX_CONNS 1024
 #define BUF_SIZE 8192
 
-typedef enum { ST_CONNECTED, ST_AUTH, ST_UPLOADING, ST_DOWNLOADING } ConnState;
+typedef enum { ST_CONNECTED, ST_AUTH, ST_IDLE } ConnState;
 
 typedef struct {
   int sockfd;

@@ -17,6 +17,15 @@ typedef struct {
   char uuid_str[37]; // UUID string representation, be transform from session_id
 } UploadSession;
 
+typedef struct {
+    uint8_t session_id[SESSIONID_SIZE];  // session ID để theo dõi phiên download
+    uint32_t last_requested_chunk;       // chunk cuối cùng đã request/nhận
+    uint32_t chunk_length;               // kích thước mỗi chunk
+    uint64_t total_file_size;            // kích thước file dự kiến
+    char filepath[256];                  // filepath logic
+    char uuid_str[37];                   // UUID string lấy nguồn file trong storage/data
+} DownloadSession;
+
 extern UploadSession ss[MAX_SESSION];
 
 void data_handler(Conn *c, Frame *data);

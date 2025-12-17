@@ -177,6 +177,7 @@ int main(int argc, char *argv[]) {
   if (!g_session_ready) {
     pthread_cond_wait(&g_cond, &g_lock);
   }
+  
   int ready = g_session_ready;
   uint8_t sid_copy[SESSIONID_SIZE];
   if (ready)
