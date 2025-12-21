@@ -14,6 +14,8 @@ static pthread_cond_t g_cond = PTHREAD_COND_INITIALIZER;
 static uint8_t g_session_id[SESSIONID_SIZE];
 static int g_session_ready = 0;
 static uint32_t g_upload_chunk_size = 0;
+static char g_token[256] = {0};
+static Connect *g_conn = NULL;
 
 static int hexval(char c) {
     if ('0' <= c && c <= '9') return c - '0';
@@ -76,6 +78,26 @@ static void print_response(Frame *resp) {
 // Callback dùng cho các request bình thường
 static void handle_response(Frame *resp) { print_response(resp); }
 
+// Callback dành riêng cho LOGIN để lưu token phiên
+static void handle_login_response(Frame *resp) {
+  print_response(resp);
+  if (resp->header.resp.status != STATUS_OK || resp->payload_len == 0)
+    return;
+
+  cJSON *json = cJSON_Parse((char *)resp->payload);
+  if (!json)
+    return;
+
+  cJSON *token_item = cJSON_GetObjectItemCaseSensitive(json, "token");
+  if (cJSON_IsString(token_item) && token_item->valuestring) {
+    strncpy(g_token, token_item->valuestring, sizeof(g_token) - 1);
+    g_token[sizeof(g_token) - 1] = '\0';
+    printf("Stored auth token: %s\n", g_token);
+  }
+
+  cJSON_Delete(json);
+}
+
 // Callback dành riêng cho UPLOAD_INIT để lấy sessionId
 static void handle_upload_init_resp(Frame *resp) {
   print_response(resp);
@@ -103,6 +125,255 @@ static void handle_upload_init_resp(Frame *resp) {
   cJSON_Delete(json);
 }
 
+// ===== Helper CLI commands =====
+
+static void cli_help(void) {
+  printf("Available commands:\n");
+  printf("  help                       - Show this help\n");
+  printf("  register <user> <pass>     - Register new account\n");
+  printf("  login <user> <pass>        - Login and get token\n");
+  printf("  auth [token]               - Auth using token (arg or stored)\n");
+  printf("  me                         - Get current user info\n");
+  printf("  logout                     - Logout and invalidate token\n");
+  printf("  ping                       - Send PING\n");
+  printf("  list [path]                - List files at path\n");
+  printf("  upload_demo                - Demo upload: INIT + one DATA chunk\n");
+  printf("  token                      - Print stored auth token\n");
+  printf("  exit / quit                - Exit client\n");
+}
+
+static void cli_cmd_register(const char *username, const char *password) {
+  if (!username || !password) {
+    printf("Usage: register <username> <password>\n");
+    return;
+  }
+
+  Frame f;
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddStringToObject(json, "cmd", "REGISTER");
+  cJSON_AddStringToObject(json, "username", username);
+  cJSON_AddStringToObject(json, "password", password);
+  char *payload = cJSON_PrintUnformatted(json);
+
+  build_cmd_frame(&f, 0, payload);
+  printf("Sending REGISTER CMD for user '%s'...\n", username);
+  g_conn->send_cmd(g_conn, &f, handle_response);
+
+  free(payload);
+  cJSON_Delete(json);
+}
+
+static void cli_cmd_login(const char *username, const char *password) {
+  if (!username || !password) {
+    printf("Usage: login <username> <password>\n");
+    return;
+  }
+
+  Frame f;
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddStringToObject(json, "cmd", "LOGIN");
+  cJSON_AddStringToObject(json, "username", username);
+  cJSON_AddStringToObject(json, "password", password);
+  char *payload = cJSON_PrintUnformatted(json);
+
+  build_cmd_frame(&f, 0, payload);
+  printf("Sending LOGIN CMD for user '%s'...\n", username);
+  g_conn->send_cmd(g_conn, &f, handle_login_response);
+
+  free(payload);
+  cJSON_Delete(json);
+}
+
+static void cli_cmd_auth(const char *token_arg) {
+  const char *token = (token_arg && token_arg[0]) ? token_arg : g_token;
+  if (!token || token[0] == '\0') {
+    printf("Usage: auth <token>\n(no stored token yet)\n");
+    return;
+  }
+
+  Frame f;
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddStringToObject(json, "cmd", "AUTH");
+  cJSON_AddStringToObject(json, "token", token);
+  char *payload = cJSON_PrintUnformatted(json);
+
+  build_cmd_frame(&f, 0, payload);
+  printf("Sending AUTH CMD...\n");
+  g_conn->send_cmd(g_conn, &f, handle_login_response);
+
+  free(payload);
+  cJSON_Delete(json);
+}
+
+static void cli_cmd_me(void) {
+  Frame f;
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddStringToObject(json, "cmd", "GET_ME");
+  char *payload = cJSON_PrintUnformatted(json);
+
+  build_cmd_frame(&f, 0, payload);
+  printf("Sending GET_ME CMD...\n");
+  g_conn->send_cmd(g_conn, &f, handle_response);
+
+  free(payload);
+  cJSON_Delete(json);
+}
+
+static void cli_cmd_logout(void) {
+  Frame f;
+  cJSON *json = cJSON_CreateObject();
+  cJSON_AddStringToObject(json, "cmd", "LOGOUT");
+  char *payload = cJSON_PrintUnformatted(json);
+
+  build_cmd_frame(&f, 0, payload);
+  printf("Sending LOGOUT CMD...\n");
+  g_conn->send_cmd(g_conn, &f, handle_response);
+
+  free(payload);
+  cJSON_Delete(json);
+}
+
+static void cli_cmd_ping(void) {
+  Frame f;
+  const char *payload = "{\"cmd\":\"PING\"}";
+  build_cmd_frame(&f, 0, payload);
+  printf("Sending PING CMD...\n");
+  g_conn->send_cmd(g_conn, &f, handle_response);
+}
+
+static void cli_cmd_list(const char *path) {
+  Frame f;
+  cJSON *json = cJSON_CreateObject();
+  const char *effective_path = (path && path[0]) ? path : "/";
+  cJSON_AddStringToObject(json, "cmd", "LIST");
+  cJSON_AddStringToObject(json, "path", effective_path);
+  char *payload = cJSON_PrintUnformatted(json);
+
+  build_cmd_frame(&f, 0, payload);
+  printf("Sending LIST CMD for path '%s'...\n", effective_path);
+  g_conn->send_cmd(g_conn, &f, handle_response);
+
+  free(payload);
+  cJSON_Delete(json);
+}
+
+static void cli_cmd_upload_demo(void) {
+  // Reset session state
+  pthread_mutex_lock(&g_lock);
+  g_session_ready = 0;
+  pthread_mutex_unlock(&g_lock);
+
+  Frame up_init;
+  cJSON *up_json = cJSON_CreateObject();
+  cJSON_AddStringToObject(up_json, "cmd", "UPLOAD_INIT");
+  cJSON_AddStringToObject(up_json, "path", "data/storage/tmp/client_cli.bin");
+  cJSON_AddNumberToObject(up_json, "file_size", 32);
+  cJSON_AddNumberToObject(up_json, "chunk_size", 16);
+  g_upload_chunk_size = 16;
+  char *up_payload = cJSON_PrintUnformatted(up_json);
+  build_cmd_frame(&up_init, 0, up_payload);
+  printf("Sending UPLOAD_INIT...\n");
+  g_conn->send_cmd(g_conn, &up_init, handle_upload_init_resp);
+  free(up_payload);
+  cJSON_Delete(up_json);
+
+  // Wait for sessionId from server
+  pthread_mutex_lock(&g_lock);
+  while (!g_session_ready) {
+    pthread_cond_wait(&g_cond, &g_lock);
+  }
+
+  uint8_t sid_copy[SESSIONID_SIZE];
+  memcpy(sid_copy, g_session_id, SESSIONID_SIZE);
+  g_session_ready = 0;
+  pthread_mutex_unlock(&g_lock);
+
+  // Send first DATA chunk
+  Frame data_frame;
+  const char *chunk = "0123456789ABCDEF"; // 16 bytes
+  size_t chunk_len = strlen(chunk);
+  build_data_frame(&data_frame, 0, sid_copy, 1, g_upload_chunk_size,
+                   (const uint8_t *)chunk);
+  printf("Sending DATA chunk_index=1 chunk_length=%u payload_len=%zu...\n",
+         g_upload_chunk_size, chunk_len);
+  g_conn->send_data(g_conn, &data_frame, handle_response);
+}
+
+static void cli_print_token(void) {
+  if (g_token[0] == '\0') {
+    printf("No token stored.\n");
+  } else {
+    printf("Stored token: %s\n", g_token);
+  }
+}
+
+static void trim_newline(char *s) {
+  if (!s)
+    return;
+  size_t len = strlen(s);
+  while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
+    s[len - 1] = '\0';
+    len--;
+  }
+}
+
+static void cli_loop(void) {
+  char line[512];
+  printf("Type 'help' to see available commands.\n");
+
+  while (1) {
+    printf("fs-cli> ");
+    fflush(stdout);
+
+    if (!fgets(line, sizeof(line), stdin)) {
+      printf("\nEOF received, exiting.\n");
+      break;
+    }
+
+    trim_newline(line);
+    if (line[0] == '\0')
+      continue;
+
+    char *cmd = strtok(line, " \t");
+    if (!cmd)
+      continue;
+
+    if (strcmp(cmd, "help") == 0) {
+      cli_help();
+    } else if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) {
+      printf("Exiting client...\n");
+      break;
+    } else if (strcmp(cmd, "register") == 0) {
+      char *u = strtok(NULL, " \t");
+      char *p = strtok(NULL, " \t");
+      cli_cmd_register(u, p);
+    } else if (strcmp(cmd, "login") == 0) {
+      char *u = strtok(NULL, " \t");
+      char *p = strtok(NULL, " \t");
+      cli_cmd_login(u, p);
+    } else if (strcmp(cmd, "auth") == 0) {
+      char *t = strtok(NULL, "");
+      cli_cmd_auth(t);
+    } else if (strcmp(cmd, "me") == 0) {
+      cli_cmd_me();
+    } else if (strcmp(cmd, "logout") == 0) {
+      cli_cmd_logout();
+    } else if (strcmp(cmd, "ping") == 0) {
+      cli_cmd_ping();
+    } else if (strcmp(cmd, "list") == 0) {
+      char *path = strtok(NULL, "");
+      cli_cmd_list(path);
+    } else if (strcmp(cmd, "upload_demo") == 0) {
+      cli_cmd_upload_demo();
+    } else if (strcmp(cmd, "token") == 0) {
+      cli_print_token();
+    } else {
+      printf("Unknown command '%s'. Type 'help' for list.\n", cmd);
+    }
+  }
+}
+
+
 int main(int argc, char *argv[]) {
   const char *server_ip = "127.0.0.1";
   int port = 5555;
@@ -114,95 +385,18 @@ int main(int argc, char *argv[]) {
 
   printf("Connecting to server %s:%d\n", server_ip, port);
 
-  Connect *conn = connect_create(server_ip, port);
-  if (!conn) {
+  g_conn = connect_create(server_ip, port);
+  if (!g_conn) {
     fprintf(stderr, "Failed to connect to server\n");
     return 1;
   }
 
   printf("Connected successfully!\n\n");
 
-  // ===== Bước 1: LOGIN bằng CMD frame =====
-  Frame login_frame;
-  cJSON *login_json = cJSON_CreateObject();
-  cJSON_AddStringToObject(login_json, "cmd", "LOGIN");
-  cJSON_AddStringToObject(login_json, "username", "demo");
-  cJSON_AddStringToObject(login_json, "password", "demo");
-  char *login_payload = cJSON_PrintUnformatted(login_json);
-  build_cmd_frame(&login_frame, 0, login_payload);
-  printf("Sending LOGIN CMD...\n");
-  conn->send_cmd(conn, &login_frame, handle_response);
-  free(login_payload);
-  cJSON_Delete(login_json);
-  sleep(1);
-
-  // ===== Bước 2: Gửi CMD PING =====
-  Frame ping_frame;
-  const char *ping_payload = "{\"cmd\":\"PING\"}";
-  build_cmd_frame(&ping_frame, 0, ping_payload);
-  printf("Sending PING CMD...\n");
-  conn->send_cmd(conn, &ping_frame, handle_response);
-  sleep(1);
-
-  // ===== Bước 3: Gửi CMD LIST =====
-  Frame list_frame;
-  cJSON *list_json = cJSON_CreateObject();
-  cJSON_AddStringToObject(list_json, "cmd", "LIST");
-  cJSON_AddStringToObject(list_json, "path", "/home/user/documents");
-  char *list_payload = cJSON_PrintUnformatted(list_json);
-  build_cmd_frame(&list_frame, 0, list_payload);
-  printf("Sending LIST CMD...\n");
-  conn->send_cmd(conn, &list_frame, handle_response);
-  free(list_payload);
-  cJSON_Delete(list_json);
-  sleep(1);
-
-  // ===== Bước 4: UPLOAD_INIT =====
-  Frame up_init;
-  cJSON *up_json = cJSON_CreateObject();
-  cJSON_AddStringToObject(up_json, "cmd", "UPLOAD_INIT");
-  cJSON_AddStringToObject(up_json, "path", "data/storage/tmp/client_test.bin");
-  cJSON_AddNumberToObject(up_json, "file_size", 32);
-  cJSON_AddNumberToObject(up_json, "chunk_size", 16);
-  g_upload_chunk_size = 16;
-  char *up_payload = cJSON_PrintUnformatted(up_json);
-  build_cmd_frame(&up_init, 0, up_payload);
-  printf("Sending UPLOAD_INIT...\n");
-  conn->send_cmd(conn, &up_init, handle_upload_init_resp);
-  free(up_payload);
-  cJSON_Delete(up_json);
-
-  // Chờ sessionId
-  pthread_mutex_lock(&g_lock);
-  if (!g_session_ready) {
-    pthread_cond_wait(&g_cond, &g_lock);
-  }
-  
-  int ready = g_session_ready;
-  uint8_t sid_copy[SESSIONID_SIZE];
-  if (ready)
-    memcpy(sid_copy, g_session_id, SESSIONID_SIZE);
-  pthread_mutex_unlock(&g_lock);
-
-  if (ready) {
-    // ===== Bước 5: gửi DATA chunk đầu tiên =====
-    Frame data_frame;
-        const char *chunk = "0123456789ABCDEF"; // 16 bytes
-        size_t chunk_len = strlen(chunk);
-        build_data_frame(&data_frame, 0, sid_copy, 1, g_upload_chunk_size,
-          (const uint8_t *)chunk);
-        printf("Sending DATA chunk_index=1 chunk_length=%u payload_len=%zu...\n",
-          g_upload_chunk_size, chunk_len);
-    conn->send_data(conn, &data_frame, handle_response);
-  } else {
-    printf("No sessionId received, skip sending DATA.\n");
-  }
-
-  printf("\nWaiting for responses...\n");
-  sleep(100);
+  cli_loop();
 
   printf("\nClosing connection...\n");
-  connect_destroy(conn);
-  printf("Test completed!\n");
+  connect_destroy(g_conn);
+  printf("Client exited.\n");
   return 0;
 }

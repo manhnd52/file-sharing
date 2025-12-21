@@ -97,8 +97,11 @@ void router_handle(Conn *c, Frame *req) {
         char* cmd = cmd_item->valuestring;
         printf("[ROUTER][INFO] CMD request: cmd='%s' (fd=%d, user_id=%d, request_id=%d)\n", 
                cmd, c->sockfd, c->user_id, request_id);
-        // Allow LOGIN command without authentication
-        if (strcmp(cmd, "LOGIN") != 0 && c->logged_in == false) {
+        // Allow LOGIN, REGISTER and AUTH commands without prior authentication
+        if (strcmp(cmd, "LOGIN") != 0 &&
+            strcmp(cmd, "REGISTER") != 0 &&
+            strcmp(cmd, "AUTH") != 0 &&
+            c->logged_in == false) {
             
             Frame resp;
             build_respond_frame(&resp, request_id, STATUS_NOT_OK,

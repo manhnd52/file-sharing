@@ -188,3 +188,28 @@ bool user_verify_token(const char* token, int* user_id_out) {
     sqlite3_finalize(stmt);
     return valid;
 }
+
+bool user_invalidate_token(const char* token) {
+    if (!db_global || !token) return false;
+
+    const char* sql = "DELETE FROM sessions WHERE token = ?";
+    sqlite3_stmt* stmt;
+
+    if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        fprintf(stderr, "[TOKEN] Failed to prepare invalidate: %s\n", sqlite3_errmsg(db_global));
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, token, -1, SQLITE_STATIC);
+
+    bool ok = false;
+    if (sqlite3_step(stmt) == SQLITE_DONE) {
+        ok = true;
+        printf("[TOKEN][INFO] Invalidated session token\n");
+    } else {
+        fprintf(stderr, "[TOKEN] Failed to invalidate session: %s\n", sqlite3_errmsg(db_global));
+    }
+
+    sqlite3_finalize(stmt);
+    return ok;
+}

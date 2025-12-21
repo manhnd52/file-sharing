@@ -4,6 +4,10 @@
 #include "frame.h"
 #include <stdint.h>
 
-void handle_login(Conn *c, Frame *f);
+void handle_login(Conn *c, Frame *f, const char *cmd);
+void handle_register(Conn *c, Frame *f, const char *cmd);
+void handle_auth_token(Conn *c, Frame *f, const char *cmd);
+void handle_logout(Conn *c, Frame *f, const char *cmd);
+void handle_get_me(Conn *c, Frame *f, const char *cmd);
 
 #endif
