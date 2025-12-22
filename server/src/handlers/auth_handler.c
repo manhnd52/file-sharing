@@ -160,10 +160,17 @@ void handle_register(Conn *c, Frame *f, const char *cmd) {
 
     int user_id = user_create(username, password);
 
-    if (user_id <= 0) {
+    if (user_id < 0) {
         Frame resp;
         build_respond_frame(&resp, request_id, STATUS_NOT_OK,
-                            "{\"error\":\"username_taken_or_db_error\"}");
+                            "{\"error\":\"username_already_exists\"}");
+        send_data(c, resp);
+        printf("[AUTH:REGISTER][WARN] Username already exists: '%s' (fd=%d)\n",
+               username, c->sockfd);
+    } else if (user_id == 0) {
+        Frame resp;
+        build_respond_frame(&resp, request_id, STATUS_NOT_OK,
+                            "{\"error\":\"db_error\"}");
         send_data(c, resp);
         printf("[AUTH:REGISTER][WARN] Failed to register username='%s' (fd=%d)\n",
                username, c->sockfd);

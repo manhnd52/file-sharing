@@ -22,6 +22,11 @@ int main() {
     register_cmd_route("AUTH", handle_auth_token);
     register_cmd_route("LOGOUT", handle_logout);
     register_cmd_route("GET_ME", handle_get_me);
+    register_cmd_route("LIST_OWN_FOLDERS", handle_cmd_list_own_folders);
+    register_cmd_route("LIST_SHARED_FOLDERS", handle_cmd_list_shared_folders);
+    register_cmd_route("DELETE_FOLDER", handle_cmd_delete_folder);
+    register_cmd_route("SHARE_FOLDER", handle_cmd_share_folder);
+    register_cmd_route("RENAME_ITEM", handle_cmd_rename_item);
     
     server_start(5555);
     return 0;

@@ -20,14 +20,31 @@ bool prepare_statement(sqlite3_stmt** stmt, const char* sql) {
 }
 
 int user_create(const char* username, const char* password) {
-    if (!db_global) return 0;
+    if (!db_global || !username || !password) return 0;
 
     int user_id = 0;
-    sqlite3_stmt* stmt; // Biến này dùng để chuẩn bị và thực thi câu lệnh SQL
+    sqlite3_stmt* stmt;
 
-    // 1. Thêm user nếu chưa có
-    const char* sql_insert = "INSERT OR IGNORE INTO users(username, password) VALUES(?, ?);";
-    prepare_statement(&stmt, sql_insert);
+    // 1. Kiểm tra username đã tồn tại chưa
+    const char* sql_check = "SELECT id FROM users WHERE username = ?;";
+    if (!prepare_statement(&stmt, sql_check)) {
+        return 0;
+    }
+    sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
+
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        // Username đã tồn tại
+        user_id = -1;
+        sqlite3_finalize(stmt);
+        return user_id;
+    }
+    sqlite3_finalize(stmt);
+
+    // 2. Thêm user mới
+    const char* sql_insert = "INSERT INTO users(username, password) VALUES(?, ?);";
+    if (!prepare_statement(&stmt, sql_insert)) {
+        return 0;
+    }
 
     sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
     sqlite3_bind_text(stmt, 2, password, -1, SQLITE_STATIC);
@@ -39,9 +56,10 @@ int user_create(const char* username, const char* password) {
     }
     sqlite3_finalize(stmt);
 
-    // 2. Lấy id của user vừa tạo hoặc đã tồn tại
-    const char* sql_select = "SELECT id FROM users WHERE username = ?;";
-    prepare_statement(&stmt, sql_select);
+    // 3. Lấy id của user vừa tạo
+    if (!prepare_statement(&stmt, sql_check)) {
+        return 0;
+    }
     sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
     if (sqlite3_step(stmt) == SQLITE_ROW) {
         user_id = sqlite3_column_int(stmt, 0);
