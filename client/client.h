@@ -73,4 +73,23 @@ int fs_api_download(FsClient *fc,
                     FsApiCallback cb,
                     void *user_data);
 
+int fs_api_delete_folder(FsClient *fc,
+                         int folder_id,
+                         FsApiCallback cb,
+                         void *user_data);
+
+int fs_api_share_folder(FsClient *fc,
+                        int folder_id,
+                        const char *username,
+                        int permission,
+                        FsApiCallback cb,
+                        void *user_data);
+
+int fs_api_rename_item(FsClient *fc,
+                       int item_id,
+                       const char *item_type,
+                       const char *new_name,
+                       FsApiCallback cb,
+                       void *user_data);
+
 #endif // FS_CLIENT_H

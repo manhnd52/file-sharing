@@ -33,11 +33,23 @@ class FsApi:
         rc, resp = self.client.mkdir(parent_id, name)
         return self._parse(rc, resp)
 
-    # High-level upload/download API (chưa gắn UI đầy đủ, nhưng đã sẵn sàng).
+    # High-level upload/download API
     def upload_init(self, path: str, file_size: int, chunk_size: int):
         rc, resp = self.client.upload_init(path, file_size, chunk_size)
         return self._parse(rc, resp)
 
     def download(self, path: str):
         rc, resp = self.client.download(path)
+        return self._parse(rc, resp)
+
+    def delete_folder(self, folder_id: int):
+        rc, resp = self.client.delete_folder(folder_id)
+        return self._parse(rc, resp)
+
+    def share_folder(self, folder_id: int, username: str, permission: int):
+        rc, resp = self.client.share_folder(folder_id, username, permission)
+        return self._parse(rc, resp)
+
+    def rename_item(self, item_id: int, item_type: str, new_name: str):
+        rc, resp = self.client.rename_item(item_id, item_type, new_name)
         return self._parse(rc, resp)

@@ -4,6 +4,7 @@ import json
 from typing import Optional
 
 from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtCore import Qt
 
 from .api import FsApi
 
@@ -30,9 +31,10 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         self.api = FsApi(host, port)
         self.current_folder_id: int = 0
+        self.logged_in_user: str | None = None
 
         self.setWindowTitle("File Sharing Client (PyQt)")
-        self.resize(900, 600)
+        self.resize(1000, 600)
 
         self._build_ui()
 
@@ -42,8 +44,42 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
 
         layout = QtWidgets.QVBoxLayout(central)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
 
-        # Top: login / status
+        # ===== Top bar: Home | address bar | user info =====
+        top_bar = QtWidgets.QHBoxLayout()
+
+        self.btn_home = QtWidgets.QPushButton()
+        self.btn_home.setIcon(self.style().standardIcon(QtWidgets.QStyle.SP_DirHomeIcon))
+        self.btn_home.setIconSize(QtCore.QSize(24, 24))
+        self.btn_home.setFlat(True)
+        self.btn_home.setCursor(Qt.PointingHandCursor)
+        self.btn_home.clicked.connect(self.on_my_folders)
+
+        self.address_bar = QtWidgets.QLineEdit()
+        self.address_bar.setReadOnly(True)
+        self.address_bar.setPlaceholderText("\\")
+
+        user_layout = QtWidgets.QHBoxLayout()
+        self.lbl_username_top = QtWidgets.QLabel("")
+        self.lbl_avatar = QtWidgets.QLabel()
+        pixmap = self.style().standardPixmap(QtWidgets.QStyle.SP_DirIcon)
+        self.lbl_avatar.setPixmap(
+            pixmap.scaled(24, 24, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        )
+
+        user_layout.addWidget(self.lbl_username_top)
+        user_layout.addWidget(self.lbl_avatar)
+
+        top_bar.addWidget(self.btn_home)
+        top_bar.addWidget(self.address_bar, 1)
+        top_bar.addSpacing(12)
+        top_bar.addLayout(user_layout)
+
+        layout.addLayout(top_bar)
+
+        # ===== Login / status row =====
         top = QtWidgets.QHBoxLayout()
 
         self.user_edit = QtWidgets.QLineEdit()
@@ -67,7 +103,7 @@ class MainWindow(QtWidgets.QMainWindow):
         top.addWidget(self.status_label)
         layout.addLayout(top)
 
-        # Middle: toolbar
+        # ===== Toolbar (folders actions) =====
         bar = QtWidgets.QHBoxLayout()
         self.btn_my = QtWidgets.QPushButton("My folders")
         self.btn_shared = QtWidgets.QPushButton("Shared with me")
@@ -83,13 +119,31 @@ class MainWindow(QtWidgets.QMainWindow):
         bar.addStretch(1)
         layout.addLayout(bar)
 
-        # Tree/list view
-        self.model = QtGui.QStandardItemModel(0, 2)
-        self.model.setHorizontalHeaderLabels(["Name", "Type"])
+        # ===== Tree/list view giống mock =====
+        self.model = QtGui.QStandardItemModel()
+        headers = ["Tên", "Chủ sở hữu", "Ngày sửa đổi", "Kích cỡ tệp", ""]
+        self.model.setHorizontalHeaderLabels(headers)
 
         self.view = QtWidgets.QTreeView()
         self.view.setModel(self.model)
+        self.view.setRootIsDecorated(False)
+        self.view.setAlternatingRowColors(False)
+        self.view.setUniformRowHeights(True)
+        self.view.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.view.setExpandsOnDoubleClick(False)
         self.view.doubleClicked.connect(self.on_item_double_clicked)
+
+        header = self.view.header()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(4, QtWidgets.QHeaderView.Fixed)
+        self.view.setColumnWidth(4, 30)
+
+        self.view.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.view.customContextMenuRequested.connect(self.on_context_menu)
+
         layout.addWidget(self.view)
 
     # ---------- Helpers ----------
@@ -104,17 +158,32 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _populate_from_list_resp(self, data: dict) -> None:
         self.model.removeRows(0, self.model.rowCount())
+        icon_folder = self.style().standardIcon(QtWidgets.QStyle.SP_DirIcon)
+        icon_file = self.style().standardIcon(QtWidgets.QStyle.SP_FileIcon)
+
         items = data.get("items") or []
         for item in items:
             name = item.get("name", "")
             item_type = item.get("type", "")
             id_ = item.get("id", 0)
+            size = item.get("size", "-")
 
             name_item = QtGui.QStandardItem(name)
-            type_item = QtGui.QStandardItem(item_type)
+            name_item.setIcon(icon_folder if item_type == "folder" else icon_file)
             name_item.setData(id_, role=QtCore.Qt.UserRole + 1)
             name_item.setData(item_type, role=QtCore.Qt.UserRole + 2)
-            self.model.appendRow([name_item, type_item])
+
+            owner = item.get("owner") or (self.logged_in_user or "")
+            owner_item = QtGui.QStandardItem(owner)
+            date_item = QtGui.QStandardItem(item.get("modified") or "")
+            size_text = "-" if item_type == "folder" else str(size)
+            size_item = QtGui.QStandardItem(size_text)
+            opt_item = QtGui.QStandardItem("⋮")
+            opt_item.setTextAlignment(Qt.AlignCenter)
+
+            self.model.appendRow(
+                [name_item, owner_item, date_item, size_item, opt_item]
+            )
 
     # ---------- Slots ----------
     def _run_api_async(self, func, on_done, *args) -> None:
@@ -161,7 +230,10 @@ class MainWindow(QtWidgets.QMainWindow):
                 err = data.get("error") if data else "Login failed"
                 self._error_box(str(err))
                 return
+            self.logged_in_user = username
             self._set_status(f"Logged in as {username}")
+            self.lbl_username_top.setText(username)
+            self.address_bar.setText(f"\\{username}")
             self.current_folder_id = 0
             self._load_folder_async(0)
 
@@ -211,7 +283,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._run_api_async(self.api.mkdir, done, self.current_folder_id, name.strip())
 
     def on_item_double_clicked(self, index: QtCore.QModelIndex) -> None:
-        name_item = self.model.itemFromIndex(index)
+        # Luôn lấy item ở cột "Tên"
+        name_index = index.sibling(index.row(), 0)
+        name_item = self.model.itemFromIndex(name_index)
         if not name_item:
             return
         item_type = name_item.data(QtCore.Qt.UserRole + 2)
@@ -220,5 +294,131 @@ class MainWindow(QtWidgets.QMainWindow):
             self.current_folder_id = int(item_id)
             self._load_folder_async(self.current_folder_id)
 
-    # (Context menu cho delete/share/rename đã được bỏ
-    #  để giao diện đơn giản, bám theo API client mới.)
+    # ---------- Context menu ----------
+    def on_context_menu(self, pos: QtCore.QPoint) -> None:
+        index = self.view.indexAt(pos)
+        if not index.isValid():
+            return
+
+        # Luôn làm việc trên cột "Tên"
+        name_index = index.sibling(index.row(), 0)
+        name_item = self.model.itemFromIndex(name_index)
+        if not name_item:
+            return
+        item_type = name_item.data(QtCore.Qt.UserRole + 2)
+        item_id = name_item.data(QtCore.Qt.UserRole + 1)
+
+        menu = QtWidgets.QMenu(self)
+        menu.setStyleSheet(
+            """
+            QMenu {
+                background-color: white;
+                border: 1px solid black;
+                padding: 5px;
+            }
+            QMenu::item {
+                padding: 5px 20px;
+                font-size: 13px;
+            }
+            QMenu::item:selected {
+                background-color: #eee;
+                color: black;
+            }
+            """
+        )
+
+        act_download = menu.addAction("Tải xuống")
+        act_rename = menu.addAction("Đổi tên")
+        menu.addSeparator()
+        act_share = menu.addAction("Chia sẻ")
+        act_move = menu.addAction("Di chuyển")
+        menu.addSeparator()
+        act_delete = menu.addAction("Xóa")
+
+        chosen = menu.exec_(self.view.viewport().mapToGlobal(pos))
+        if not chosen:
+            return
+
+        if chosen == act_download:
+            self._action_download(item_type, item_id, name_item.text())
+        elif chosen == act_rename:
+            self._action_rename(item_type, item_id, name_item.text())
+        elif chosen == act_share and item_type == "folder":
+            self._action_share_folder(item_id)
+        elif chosen == act_move:
+            self._error_box("Move action is not implemented yet.")
+        elif chosen == act_delete:
+            self._action_delete(item_type, item_id, name_item.text())
+
+    def _action_download(self, item_type: str, item_id: int, name: str) -> None:
+        # Hiện server DOWNLOAD đang demo; tạm thời chỉ báo.
+        self._error_box("Download is not fully implemented on server yet.")
+
+    def _action_delete(self, item_type: str, item_id: int, name: str) -> None:
+        if item_type != "folder":
+            self._error_box("Delete for files is not implemented yet.")
+            return
+
+        reply = QtWidgets.QMessageBox.question(
+            self,
+            "Delete",
+            f"Bạn chắc chắn muốn xóa thư mục: {name}?",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+        )
+        if reply != QtWidgets.QMessageBox.Yes:
+            return
+
+        def done(rc: int, data: dict | None) -> None:
+            if rc != 0 or not data or data.get("status") != "ok":
+                err = data.get("error") if data else "Delete failed"
+                self._error_box(str(err))
+                return
+            self._reload_current()
+
+        self._run_api_async(self.api.delete_folder, done, int(item_id))
+
+    def _action_share_folder(self, folder_id: int) -> None:
+        username, ok = QtWidgets.QInputDialog.getText(
+            self, "Share folder", "Share with username:"
+        )
+        if not ok or not username.strip():
+            return
+
+        perm_str, ok = QtWidgets.QInputDialog.getText(
+            self, "Share folder", "Permission (0-3, default 1):"
+        )
+        if not ok:
+            return
+        perm = 1
+        if perm_str.strip():
+            try:
+                perm = int(perm_str.strip())
+            except ValueError:
+                perm = 1
+
+        def done(rc: int, data: dict | None) -> None:
+            if rc != 0 or not data or data.get("status") != "ok":
+                err = data.get("error") if data else "Share failed"
+                self._error_box(str(err))
+
+        self._run_api_async(
+            self.api.share_folder, done, int(folder_id), username.strip(), perm
+        )
+
+    def _action_rename(self, item_type: str, item_id: int, old_name: str) -> None:
+        new_name, ok = QtWidgets.QInputDialog.getText(
+            self, "Rename", "New name:", text=old_name
+        )
+        if not ok or not new_name.strip():
+            return
+
+        def done(rc: int, data: dict | None) -> None:
+            if rc != 0 or not data or data.get("status") != "ok":
+                err = data.get("error") if data else "Rename failed"
+                self._error_box(str(err))
+                return
+            self._reload_current()
+
+        self._run_api_async(
+            self.api.rename_item, done, int(item_id), item_type, new_name.strip()
+        )

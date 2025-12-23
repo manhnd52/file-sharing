@@ -89,6 +89,34 @@ _lib.fs_api_download.argtypes = [
 ]
 _lib.fs_api_download.restype = c_int
 
+_lib.fs_api_delete_folder.argtypes = [
+    FSClientPtr,
+    c_int,
+    FsApiCallbackC,
+    c_void_p,
+]
+_lib.fs_api_delete_folder.restype = c_int
+
+_lib.fs_api_share_folder.argtypes = [
+    FSClientPtr,
+    c_int,
+    c_char_p,
+    c_int,
+    FsApiCallbackC,
+    c_void_p,
+]
+_lib.fs_api_share_folder.restype = c_int
+
+_lib.fs_api_rename_item.argtypes = [
+    FSClientPtr,
+    c_int,
+    c_char_p,
+    c_char_p,
+    FsApiCallbackC,
+    c_void_p,
+]
+_lib.fs_api_rename_item.restype = c_int
+
 
 class Client:
     """
@@ -211,3 +239,34 @@ class Client:
             path.encode("utf-8"),
         )
 
+    def delete_folder(self, folder_id: int) -> tuple[int, str | None]:
+        return self._call_and_wait(
+            _lib.fs_api_delete_folder,
+            c_int(folder_id),
+        )
+
+    def share_folder(
+        self,
+        folder_id: int,
+        username: str,
+        permission: int,
+    ) -> tuple[int, str | None]:
+        return self._call_and_wait(
+            _lib.fs_api_share_folder,
+            c_int(folder_id),
+            username.encode("utf-8"),
+            c_int(permission),
+        )
+
+    def rename_item(
+        self,
+        item_id: int,
+        item_type: str,
+        new_name: str,
+    ) -> tuple[int, str | None]:
+        return self._call_and_wait(
+            _lib.fs_api_rename_item,
+            c_int(item_id),
+            item_type.encode("utf-8"),
+            new_name.encode("utf-8"),
+        )

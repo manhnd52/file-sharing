@@ -347,3 +347,75 @@ int fs_api_download(FsClient *fc,
     free(payload);
     return rc;
 }
+
+// DELETE_FOLDER
+int fs_api_delete_folder(FsClient *fc,
+                         int folder_id,
+                         FsApiCallback cb,
+                         void *user_data) {
+    if (folder_id <= 0 || !cb) return -1;
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "DELETE_FOLDER");
+    cJSON_AddNumberToObject(root, "folder_id", folder_id);
+
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
+
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
+}
+
+// SHARE_FOLDER
+int fs_api_share_folder(FsClient *fc,
+                        int folder_id,
+                        const char *username,
+                        int permission,
+                        FsApiCallback cb,
+                        void *user_data) {
+    if (folder_id <= 0 || !username || !*username || !cb) return -1;
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "SHARE_FOLDER");
+    cJSON_AddNumberToObject(root, "folder_id", folder_id);
+    cJSON_AddStringToObject(root, "username", username);
+    cJSON_AddNumberToObject(root, "permission", permission);
+
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
+
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
+}
+
+// RENAME_ITEM (folder/file)
+int fs_api_rename_item(FsClient *fc,
+                       int item_id,
+                       const char *item_type,
+                       const char *new_name,
+                       FsApiCallback cb,
+                       void *user_data) {
+    if (item_id <= 0 || !item_type || !*item_type || !new_name || !*new_name || !cb)
+        return -1;
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "RENAME_ITEM");
+    cJSON_AddNumberToObject(root, "item_id", item_id);
+    cJSON_AddStringToObject(root, "item_type", item_type);
+    cJSON_AddStringToObject(root, "new_name", new_name);
+
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
+
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
+}
