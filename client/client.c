@@ -1,402 +1,349 @@
-#include "connect.h"
-#include "frame.h"
-#include "cJSON.h"
-#include <arpa/inet.h>
-#include <pthread.h>
-#include <stdio.h>
+
+#include "client.h"
+#include "../protocol/cJSON.h"
+
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
-#include <unistd.h>
+#include <pthread.h>
+#include <arpa/inet.h>
 
-static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t g_cond = PTHREAD_COND_INITIALIZER;
-static uint8_t g_session_id[SESSIONID_SIZE];
-static int g_session_ready = 0;
-static uint32_t g_upload_chunk_size = 0;
-static char g_token[256] = {0};
-static Connect *g_conn = NULL;
+// ===== Internal types =====
 
-static int hexval(char c) {
-    if ('0' <= c && c <= '9') return c - '0';
-    if ('a' <= c && c <= 'f') return c - 'a' + 10;
-    if ('A' <= c && c <= 'F') return c - 'A' + 10;
-    return -1;
+// Callback high-level: trả về status + JSON string (có thể NULL).
+typedef void (*FsApiCallback)(int status, const char *json_resp, void *user_data);
+
+typedef struct {
+    uint32_t request_key; // request_id ở dạng network order (htonl)
+    FsApiCallback cb;
+    void *user_data;
+    int in_use;
+} FsPendingEntry;
+
+#define FS_MAX_PENDING 1024
+
+// Định nghĩa struct FsClient (khớp với khai báo trong client.h)
+struct FsClient {
+    Connect *conn; // Kết nối TCP tới server (Connect lo pending/heartbeat)
+
+    pthread_mutex_t lock;
+    FsPendingEntry pending[FS_MAX_PENDING];
+};
+
+// Giản lược: chỉ một FsClient được dùng cho API high-level.
+static FsClient *g_fs_client = NULL;
+
+// Cầu nối từ callback của Connect sang callback high-level.
+static void fs_api_resp_bridge(Frame *resp) {
+    if (!g_fs_client || !resp) return;
+
+    FsClient *fc = g_fs_client;
+    uint32_t resp_key = (uint32_t)htonl(resp->header.resp.request_id);
+
+    FsApiCallback cb = NULL;
+    void *user_data = NULL;
+
+    pthread_mutex_lock(&fc->lock);
+    for (int i = 0; i < FS_MAX_PENDING; ++i) {
+        if (fc->pending[i].in_use && fc->pending[i].request_key == resp_key) {
+            cb = fc->pending[i].cb;
+            user_data = fc->pending[i].user_data;
+            fc->pending[i].in_use = 0;
+            fc->pending[i].cb = NULL;
+            fc->pending[i].user_data = NULL;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&fc->lock);
+
+    if (!cb) return;
+
+    int status = STATUS_NOT_OK;
+    if (resp->msg_type == MSG_RESPOND) {
+        status = resp->header.resp.status;
+    }
+
+    char *json_copy = NULL;
+    if (resp->payload_len > 0) {
+        json_copy = (char *)malloc(resp->payload_len + 1);
+        if (json_copy) {
+            memcpy(json_copy, resp->payload, resp->payload_len);
+            json_copy[resp->payload_len] = '\0';
+        }
+    }
+
+    cb(status, json_copy, user_data);
+
+    if (json_copy) {
+        free(json_copy);
+    }
 }
 
-// Chuyển cặp hex thành byte
-static int hexpair_to_byte(char a, char b, uint8_t *out) {
-    int hi = hexval(a);
-    int lo = hexval(b);
-    if (hi < 0 || lo < 0) return -1;
-    *out = (uint8_t)((hi << 4) | lo);
+// Tạo client và kết nối tới server.
+FsClient *fs_client_create(const char *host, uint16_t port) {
+    FsClient *fc = (FsClient *)calloc(1, sizeof(struct FsClient));
+    if (!fc) return NULL;
+
+    fc->conn = connect_create(host, port);
+    if (!fc->conn) {
+        free(fc);
+        return NULL;
+    }
+
+    pthread_mutex_init(&fc->lock, NULL);
+    memset(fc->pending, 0, sizeof(fc->pending));
+
+    // Gán làm client mặc định cho API high-level.
+    g_fs_client = fc;
+    return fc;
+}
+
+// Hủy client, đóng kết nối.
+void fs_client_destroy(FsClient *fc) {
+    if (!fc) return;
+    if (fc->conn) {
+        connect_destroy(fc->conn);
+        fc->conn = NULL;
+    }
+    pthread_mutex_destroy(&fc->lock);
+    if (g_fs_client == fc) {
+        g_fs_client = NULL;
+    }
+    free(fc);
+}
+
+// Gửi frame AUTH bất đồng bộ.
+// token: AUTH_TOKEN_SIZE bytes.
+// json_payload: JSON bổ sung (có thể NULL).
+// cb: callback được gọi khi nhận RESPOND; chạy trong thread reader của Connect.
+int fs_client_send_auth(FsClient *fc,
+                        const uint8_t token[AUTH_TOKEN_SIZE],
+                        const char *json_payload,
+                        resp_callback cb) {
+    if (!fc || !fc->conn || !token) return -1;
+
+    Frame f;
+    if (build_auth_frame(&f, 0, token, json_payload) != 0) {
+        return -1;
+    }
+    return fc->conn->send_auth(fc->conn, &f, cb);
+}
+
+// Gửi CMD bất đồng bộ với payload JSON.
+// json_payload: chuỗi JSON (không NULL).
+// cb: callback được gọi khi nhận RESPOND.
+int fs_client_send_cmd(FsClient *fc,
+                       const char *json_payload,
+                       resp_callback cb,
+                       uint32_t *out_request_id) {
+    if (!fc || !fc->conn || !json_payload || !cb) return -1;
+
+    Frame f;
+    if (build_cmd_frame(&f, 0, json_payload) != 0) {
+        return -1;
+    }
+    int rc = fc->conn->send_cmd(fc->conn, &f, cb);
+    if (rc != 0) {
+        return rc;
+    }
+
+    if (out_request_id) {
+        uint32_t key = (uint32_t)get_request_id(&f);
+        *out_request_id = key;
+    }
     return 0;
 }
 
-static int parse_uuid_to_bytes(const char *uuid_str, uint8_t out[SESSIONID_SIZE]) {
-  if (!uuid_str)
-    return -1;
-  char hex[33];
-  int h = 0;
-  for (const char *p = uuid_str; *p && h < 32; ++p) {
-    if (*p == '-')
-      continue;
-    hex[h++] = *p;
-  }
-  if (h != 32)
-    return -1;
-  hex[32] = '\0';
-  for (int i = 0; i < 16; ++i) {
-    if (hexpair_to_byte(hex[2 * i], hex[2 * i + 1], &out[i]) != 0)
-      return -1;
-  }
-  return 0;
-}
+// Gửi DATA frame bất đồng bộ (upload/download chunk).
+int fs_client_send_data(FsClient *fc,
+                        const uint8_t session_id[SESSIONID_SIZE],
+                        uint32_t chunk_index,
+                        uint32_t chunk_length,
+                        const uint8_t *data,
+                        resp_callback cb) {
+    if (!fc || !fc->conn || !session_id) return -1;
 
-// Callback để xử lý RESPOND chung
-static void print_response(Frame *resp) {
-  printf("\n=== Client: Received RESPOND ===\n");
-  printf("Request ID: %u\n", resp->header.resp.request_id);
-  printf("Status: %d (%s)\n", resp->header.resp.status,
-         resp->header.resp.status == 0 ? "OK" : "ERROR");
-
-  if (resp->payload_len > 0) {
-    printf("Payload (%zu bytes): %.*s\n", resp->payload_len,
-           (int)resp->payload_len, resp->payload);
-
-    cJSON *json = cJSON_Parse((char *)resp->payload);
-    if (json) {
-      char *pretty = cJSON_Print(json);
-      printf("JSON Response:\n%s\n", pretty);
-      free(pretty);
-      cJSON_Delete(json);
+    Frame f;
+    if (build_data_frame(&f, 0, session_id, chunk_index, chunk_length, data) != 0) {
+        return -1;
     }
-  }
-  printf("================================\n\n");
+    return fc->conn->send_data(fc->conn, &f, cb);
 }
 
-// Callback dùng cho các request bình thường
-static void handle_response(Frame *resp) { print_response(resp); }
+// ===== High-level JSON API (async, multi-pending via request_id) =====
 
-// Callback dành riêng cho LOGIN để lưu token phiên
-static void handle_login_response(Frame *resp) {
-  print_response(resp);
-  if (resp->header.resp.status != STATUS_OK || resp->payload_len == 0)
-    return;
+// Helper: gửi CMD với payload JSON (string) và callback high-level.
+static int fs_send_json_cmd(FsClient *fc,
+                            const char *json_payload,
+                            FsApiCallback cb,
+                            void *user_data) {
+    if (!fc || !json_payload || !cb) return -1;
+    if (!fc->conn) return -1;
 
-  cJSON *json = cJSON_Parse((char *)resp->payload);
-  if (!json)
-    return;
+    g_fs_client = fc;
 
-  cJSON *token_item = cJSON_GetObjectItemCaseSensitive(json, "token");
-  if (cJSON_IsString(token_item) && token_item->valuestring) {
-    strncpy(g_token, token_item->valuestring, sizeof(g_token) - 1);
-    g_token[sizeof(g_token) - 1] = '\0';
-    printf("Stored auth token: %s\n", g_token);
-  }
-
-  cJSON_Delete(json);
-}
-
-// Callback dành riêng cho UPLOAD_INIT để lấy sessionId
-static void handle_upload_init_resp(Frame *resp) {
-  print_response(resp);
-  if (resp->header.resp.status != STATUS_OK)
-    return;
-
-  cJSON *json = cJSON_Parse((char *)resp->payload);
-  if (!json)
-    return;
-
-  cJSON *sid = cJSON_GetObjectItemCaseSensitive(json, "sessionId");
-  if (cJSON_IsString(sid) && sid->valuestring) {
-    uint8_t tmp[SESSIONID_SIZE];
-    if (parse_uuid_to_bytes(sid->valuestring, tmp) == 0) {
-      pthread_mutex_lock(&g_lock);
-      memcpy(g_session_id, tmp, SESSIONID_SIZE);
-      g_session_ready = 1;
-      pthread_cond_signal(&g_cond);
-      pthread_mutex_unlock(&g_lock);
-      printf("Stored session id for upload.\n");
-    } else {
-      printf("Failed to parse sessionId to bytes.\n");
-    }
-  }
-  cJSON_Delete(json);
-}
-
-// ===== Helper CLI commands =====
-
-static void cli_help(void) {
-  printf("Available commands:\n");
-  printf("  help                       - Show this help\n");
-  printf("  register <user> <pass>     - Register new account\n");
-  printf("  login <user> <pass>        - Login and get token\n");
-  printf("  auth [token]               - Auth using token (arg or stored)\n");
-  printf("  me                         - Get current user info\n");
-  printf("  logout                     - Logout and invalidate token\n");
-  printf("  ping                       - Send PING\n");
-  printf("  list [path]                - List files at path\n");
-  printf("  upload_demo                - Demo upload: INIT + one DATA chunk\n");
-  printf("  token                      - Print stored auth token\n");
-  printf("  exit / quit                - Exit client\n");
-}
-
-static void cli_cmd_register(const char *username, const char *password) {
-  if (!username || !password) {
-    printf("Usage: register <username> <password>\n");
-    return;
-  }
-
-  Frame f;
-  cJSON *json = cJSON_CreateObject();
-  cJSON_AddStringToObject(json, "cmd", "REGISTER");
-  cJSON_AddStringToObject(json, "username", username);
-  cJSON_AddStringToObject(json, "password", password);
-  char *payload = cJSON_PrintUnformatted(json);
-
-  build_cmd_frame(&f, 0, payload);
-  printf("Sending REGISTER CMD for user '%s'...\n", username);
-  g_conn->send_cmd(g_conn, &f, handle_response);
-
-  free(payload);
-  cJSON_Delete(json);
-}
-
-static void cli_cmd_login(const char *username, const char *password) {
-  if (!username || !password) {
-    printf("Usage: login <username> <password>\n");
-    return;
-  }
-
-  Frame f;
-  cJSON *json = cJSON_CreateObject();
-  cJSON_AddStringToObject(json, "cmd", "LOGIN");
-  cJSON_AddStringToObject(json, "username", username);
-  cJSON_AddStringToObject(json, "password", password);
-  char *payload = cJSON_PrintUnformatted(json);
-
-  build_cmd_frame(&f, 0, payload);
-  printf("Sending LOGIN CMD for user '%s'...\n", username);
-  g_conn->send_cmd(g_conn, &f, handle_login_response);
-
-  free(payload);
-  cJSON_Delete(json);
-}
-
-static void cli_cmd_auth(const char *token_arg) {
-  const char *token = (token_arg && token_arg[0]) ? token_arg : g_token;
-  if (!token || token[0] == '\0') {
-    printf("Usage: auth <token>\n(no stored token yet)\n");
-    return;
-  }
-
-  Frame f;
-  cJSON *json = cJSON_CreateObject();
-  cJSON_AddStringToObject(json, "cmd", "AUTH");
-  cJSON_AddStringToObject(json, "token", token);
-  char *payload = cJSON_PrintUnformatted(json);
-
-  build_cmd_frame(&f, 0, payload);
-  printf("Sending AUTH CMD...\n");
-  g_conn->send_cmd(g_conn, &f, handle_login_response);
-
-  free(payload);
-  cJSON_Delete(json);
-}
-
-static void cli_cmd_me(void) {
-  Frame f;
-  cJSON *json = cJSON_CreateObject();
-  cJSON_AddStringToObject(json, "cmd", "GET_ME");
-  char *payload = cJSON_PrintUnformatted(json);
-
-  build_cmd_frame(&f, 0, payload);
-  printf("Sending GET_ME CMD...\n");
-  g_conn->send_cmd(g_conn, &f, handle_response);
-
-  free(payload);
-  cJSON_Delete(json);
-}
-
-static void cli_cmd_logout(void) {
-  Frame f;
-  cJSON *json = cJSON_CreateObject();
-  cJSON_AddStringToObject(json, "cmd", "LOGOUT");
-  char *payload = cJSON_PrintUnformatted(json);
-
-  build_cmd_frame(&f, 0, payload);
-  printf("Sending LOGOUT CMD...\n");
-  g_conn->send_cmd(g_conn, &f, handle_response);
-
-  free(payload);
-  cJSON_Delete(json);
-}
-
-static void cli_cmd_ping(void) {
-  Frame f;
-  const char *payload = "{\"cmd\":\"PING\"}";
-  build_cmd_frame(&f, 0, payload);
-  printf("Sending PING CMD...\n");
-  g_conn->send_cmd(g_conn, &f, handle_response);
-}
-
-static void cli_cmd_list(const char *path) {
-  Frame f;
-  cJSON *json = cJSON_CreateObject();
-  const char *effective_path = (path && path[0]) ? path : "/";
-  cJSON_AddStringToObject(json, "cmd", "LIST");
-  cJSON_AddStringToObject(json, "path", effective_path);
-  char *payload = cJSON_PrintUnformatted(json);
-
-  build_cmd_frame(&f, 0, payload);
-  printf("Sending LIST CMD for path '%s'...\n", effective_path);
-  g_conn->send_cmd(g_conn, &f, handle_response);
-
-  free(payload);
-  cJSON_Delete(json);
-}
-
-static void cli_cmd_upload_demo(void) {
-  // Reset session state
-  pthread_mutex_lock(&g_lock);
-  g_session_ready = 0;
-  pthread_mutex_unlock(&g_lock);
-
-  Frame up_init;
-  cJSON *up_json = cJSON_CreateObject();
-  cJSON_AddStringToObject(up_json, "cmd", "UPLOAD_INIT");
-  cJSON_AddStringToObject(up_json, "path", "data/storage/tmp/client_cli.bin");
-  cJSON_AddNumberToObject(up_json, "file_size", 32);
-  cJSON_AddNumberToObject(up_json, "chunk_size", 16);
-  g_upload_chunk_size = 16;
-  char *up_payload = cJSON_PrintUnformatted(up_json);
-  build_cmd_frame(&up_init, 0, up_payload);
-  printf("Sending UPLOAD_INIT...\n");
-  g_conn->send_cmd(g_conn, &up_init, handle_upload_init_resp);
-  free(up_payload);
-  cJSON_Delete(up_json);
-
-  // Wait for sessionId from server
-  pthread_mutex_lock(&g_lock);
-  while (!g_session_ready) {
-    pthread_cond_wait(&g_cond, &g_lock);
-  }
-
-  uint8_t sid_copy[SESSIONID_SIZE];
-  memcpy(sid_copy, g_session_id, SESSIONID_SIZE);
-  g_session_ready = 0;
-  pthread_mutex_unlock(&g_lock);
-
-  // Send first DATA chunk
-  Frame data_frame;
-  const char *chunk = "0123456789ABCDEF"; // 16 bytes
-  size_t chunk_len = strlen(chunk);
-  build_data_frame(&data_frame, 0, sid_copy, 1, g_upload_chunk_size,
-                   (const uint8_t *)chunk);
-  printf("Sending DATA chunk_index=1 chunk_length=%u payload_len=%zu...\n",
-         g_upload_chunk_size, chunk_len);
-  g_conn->send_data(g_conn, &data_frame, handle_response);
-}
-
-static void cli_print_token(void) {
-  if (g_token[0] == '\0') {
-    printf("No token stored.\n");
-  } else {
-    printf("Stored token: %s\n", g_token);
-  }
-}
-
-static void trim_newline(char *s) {
-  if (!s)
-    return;
-  size_t len = strlen(s);
-  while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) {
-    s[len - 1] = '\0';
-    len--;
-  }
-}
-
-static void cli_loop(void) {
-  char line[512];
-  printf("Type 'help' to see available commands.\n");
-
-  while (1) {
-    printf("fs-cli> ");
-    fflush(stdout);
-
-    if (!fgets(line, sizeof(line), stdin)) {
-      printf("\nEOF received, exiting.\n");
-      break;
+    uint32_t request_key = 0;
+    int rc = fs_client_send_cmd(fc, json_payload, fs_api_resp_bridge, &request_key);
+    if (rc != 0) {
+        return -1;
     }
 
-    trim_newline(line);
-    if (line[0] == '\0')
-      continue;
-
-    char *cmd = strtok(line, " \t");
-    if (!cmd)
-      continue;
-
-    if (strcmp(cmd, "help") == 0) {
-      cli_help();
-    } else if (strcmp(cmd, "exit") == 0 || strcmp(cmd, "quit") == 0) {
-      printf("Exiting client...\n");
-      break;
-    } else if (strcmp(cmd, "register") == 0) {
-      char *u = strtok(NULL, " \t");
-      char *p = strtok(NULL, " \t");
-      cli_cmd_register(u, p);
-    } else if (strcmp(cmd, "login") == 0) {
-      char *u = strtok(NULL, " \t");
-      char *p = strtok(NULL, " \t");
-      cli_cmd_login(u, p);
-    } else if (strcmp(cmd, "auth") == 0) {
-      char *t = strtok(NULL, "");
-      cli_cmd_auth(t);
-    } else if (strcmp(cmd, "me") == 0) {
-      cli_cmd_me();
-    } else if (strcmp(cmd, "logout") == 0) {
-      cli_cmd_logout();
-    } else if (strcmp(cmd, "ping") == 0) {
-      cli_cmd_ping();
-    } else if (strcmp(cmd, "list") == 0) {
-      char *path = strtok(NULL, "");
-      cli_cmd_list(path);
-    } else if (strcmp(cmd, "upload_demo") == 0) {
-      cli_cmd_upload_demo();
-    } else if (strcmp(cmd, "token") == 0) {
-      cli_print_token();
-    } else {
-      printf("Unknown command '%s'. Type 'help' for list.\n", cmd);
+    // Đăng ký callback vào bảng pending
+    pthread_mutex_lock(&fc->lock);
+    int inserted = 0;
+    for (int i = 0; i < FS_MAX_PENDING; ++i) {
+        if (!fc->pending[i].in_use) {
+            fc->pending[i].in_use = 1;
+            fc->pending[i].request_key = request_key;
+            fc->pending[i].cb = cb;
+            fc->pending[i].user_data = user_data;
+            inserted = 1;
+            break;
+        }
     }
-  }
+    pthread_mutex_unlock(&fc->lock);
+
+    if (!inserted) {
+        // Không tìm được slot lưu callback; coi như lỗi high-level.
+        return -1;
+    }
+    return 0;
 }
 
+// REGISTER
+int fs_api_register(FsClient *fc,
+                    const char *username,
+                    const char *password,
+                    FsApiCallback cb,
+                    void *user_data) {
+    if (!username || !password || !cb) return -1;
 
-int main(int argc, char *argv[]) {
-  const char *server_ip = "127.0.0.1";
-  int port = 5555;
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "REGISTER");
+    cJSON_AddStringToObject(root, "username", username);
+    cJSON_AddStringToObject(root, "password", password);
 
-  if (argc >= 3) {
-    server_ip = argv[1];
-    port = atoi(argv[2]);
-  }
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
 
-  printf("Connecting to server %s:%d\n", server_ip, port);
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
+}
 
-  g_conn = connect_create(server_ip, port);
-  if (!g_conn) {
-    fprintf(stderr, "Failed to connect to server\n");
-    return 1;
-  }
+// LOGIN
+int fs_api_login(FsClient *fc,
+                 const char *username,
+                 const char *password,
+                 FsApiCallback cb,
+                 void *user_data) {
+    if (!username || !password || !cb) return -1;
 
-  printf("Connected successfully!\n\n");
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "LOGIN");
+    cJSON_AddStringToObject(root, "username", username);
+    cJSON_AddStringToObject(root, "password", password);
 
-  cli_loop();
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
 
-  printf("\nClosing connection...\n");
-  connect_destroy(g_conn);
-  printf("Client exited.\n");
-  return 0;
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
+}
+
+// LIST folder (folder_id == 0 => root user)
+int fs_api_list(FsClient *fc,
+                int folder_id,
+                FsApiCallback cb,
+                void *user_data) {
+    if (!cb) return -1;
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "LIST");
+    if (folder_id > 0) {
+        cJSON_AddNumberToObject(root, "folder_id", folder_id);
+    }
+
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
+
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
+}
+
+// MKDIR
+int fs_api_mkdir(FsClient *fc,
+                 int parent_id,
+                 const char *name,
+                 FsApiCallback cb,
+                 void *user_data) {
+    if (!name || !*name || !cb) return -1;
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "MKDIR");
+    cJSON_AddNumberToObject(root, "parent_id", parent_id);
+    cJSON_AddStringToObject(root, "name", name);
+
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
+
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
+}
+
+// UPLOAD_INIT: khởi tạo phiên upload, server trả về sessionId.
+int fs_api_upload_init(FsClient *fc,
+                       const char *path,
+                       uint64_t file_size,
+                       uint32_t chunk_size,
+                       FsApiCallback cb,
+                       void *user_data) {
+    if (!path || !*path || !cb) return -1;
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "UPLOAD_INIT");
+    cJSON_AddStringToObject(root, "path", path);
+    cJSON_AddNumberToObject(root, "file_size", (double)file_size);
+    cJSON_AddNumberToObject(root, "chunk_size", (double)chunk_size);
+
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
+
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
+}
+
+// DOWNLOAD: hiện server mới trả về metadata giả định; client chỉ cần path.
+int fs_api_download(FsClient *fc,
+                    const char *path,
+                    FsApiCallback cb,
+                    void *user_data) {
+    if (!path || !*path || !cb) return -1;
+
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return -1;
+    cJSON_AddStringToObject(root, "cmd", "DOWNLOAD");
+    cJSON_AddStringToObject(root, "path", path);
+
+    char *payload = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!payload) return -1;
+
+    int rc = fs_send_json_cmd(fc, payload, cb, user_data);
+    free(payload);
+    return rc;
 }

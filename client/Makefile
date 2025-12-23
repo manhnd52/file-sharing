@@ -1,28 +1,22 @@
 CC = gcc
-CFLAGS = -I../protocol -Wall
+CFLAGS = -Wall -fPIC
 LDFLAGS = -lpthread
 
-SRC = client.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c
-SRC_TEST = client_test.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c
-OBJ = $(patsubst %.c, %.o, $(SRC))
-OBJ_TEST = $(patsubst %.c, %.o, $(SRC_TEST))
+SRC = ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c client.c
+OBJ = ../protocol/frame.pic.o ../protocol/connect.pic.o ../protocol/cJSON.pic.o client.pic.o
 
-client: $(OBJ)
-	$(CC) $(OBJ) -o client $(LDFLAGS)
+all: libclient.so
 
-client_test: $(OBJ_TEST)
-	$(CC) $(OBJ_TEST) -o client_test $(LDFLAGS) -lm
+libclient.so: $(OBJ)
+	$(CC) -shared -o $@ $(OBJ) $(LDFLAGS)
 
-%.o: %.c
+client.pic.o: client.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+../protocol/%.pic.o: ../protocol/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJ) $(OBJ_TEST) client client_test
+	rm -f $(OBJ) libclient.so
 
-run: client
-	./client 127.0.0.1 5555
-
-run_test: client_test
-	./client_test 127.0.0.1 5555
-
-.PHONY: clean run run_test
+.PHONY: all clean
