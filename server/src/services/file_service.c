@@ -185,3 +185,83 @@ int folder_save_metadata(int owner_id, int parent_folder_id, const char* new_fol
     return folder_id;
 }
 
+// Get folder info including: folder meta data, items (folders, files)
+cJSON* get_folder_info(int folder_id) {
+    if (!db_global || folder_id <= 0) {
+        return cJSON_CreateNull();
+    }
+
+    sqlite3_stmt* stmt = NULL;
+    
+    const char* sql_info =
+        "SELECT name, parent_id, owner_id, user_root FROM folders WHERE id = ?";
+    if (sqlite3_prepare_v2(db_global, sql_info, -1, &stmt, NULL) != SQLITE_OK) {
+        return cJSON_CreateNull();
+    }
+
+    sqlite3_bind_int(stmt, 1, folder_id);
+
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        sqlite3_finalize(stmt);
+        return cJSON_CreateNull();
+    }
+
+    const unsigned char* name = sqlite3_column_text(stmt, 0);
+    int parent_id = sqlite3_column_type(stmt, 1) != SQLITE_NULL
+                        ? sqlite3_column_int(stmt, 1)
+                        : 0;
+    int owner_id = sqlite3_column_int(stmt, 2);
+    int user_root = sqlite3_column_int(stmt, 3);
+
+    sqlite3_finalize(stmt);
+
+    cJSON* info = cJSON_CreateObject();
+    cJSON_AddNumberToObject(info, "folder_id", folder_id);
+    cJSON_AddNumberToObject(info, "parent_id", parent_id);
+    cJSON_AddStringToObject(info, "folder_name", name ? (const char*)name : "");
+    cJSON_AddNumberToObject(info, "owner_id", owner_id);
+    cJSON_AddBoolToObject(info, "user_root", user_root != 0);
+
+    cJSON* items = cJSON_CreateArray();
+    cJSON_AddItemToObject(info, "items", items);
+
+    const char* sql_folders =
+        "SELECT id, name FROM folders WHERE parent_id = ? ORDER BY name";
+    if (sqlite3_prepare_v2(db_global, sql_folders, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, folder_id);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int id = sqlite3_column_int(stmt, 0);
+            const unsigned char* child_name = sqlite3_column_text(stmt, 1);
+
+            cJSON* item = cJSON_CreateObject();
+            cJSON_AddNumberToObject(item, "id", id);
+            cJSON_AddStringToObject(item, "name", child_name ? (const char*)child_name : "");
+            cJSON_AddStringToObject(item, "type", "folder");
+            cJSON_AddItemToArray(items, item);
+        }
+        sqlite3_finalize(stmt);
+        stmt = NULL;
+    }
+
+    const char* sql_files =
+        "SELECT id, name, size FROM files WHERE folder_id = ? ORDER BY name";
+    if (sqlite3_prepare_v2(db_global, sql_files, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, folder_id);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int id = sqlite3_column_int(stmt, 0);
+            const unsigned char* file_name = sqlite3_column_text(stmt, 1);
+            sqlite3_int64 size = sqlite3_column_int64(stmt, 2);
+
+            cJSON* item = cJSON_CreateObject();
+            cJSON_AddNumberToObject(item, "id", id);
+            cJSON_AddStringToObject(item, "name", file_name ? (const char*)file_name : "");
+            cJSON_AddStringToObject(item, "type", "file");
+            cJSON_AddNumberToObject(item, "size", (double)size);
+            cJSON_AddItemToArray(items, item);
+        }
+        sqlite3_finalize(stmt);
+        stmt = NULL;
+    }
+
+    return info;
+}

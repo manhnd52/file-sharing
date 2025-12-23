@@ -32,6 +32,9 @@ int main() {
     register_cmd_route("SHARE_FOLDER", handle_cmd_share_folder);
     register_cmd_route("RENAME_ITEM", handle_cmd_rename_item);
 
+    char* out = cJSON_Print(get_folder_info(1));
+    printf("%s\n", out);
+    
     server_start(5555);
 
     return 0;
