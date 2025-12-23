@@ -99,14 +99,14 @@ class Client:
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 5555) -> None:
-        self._fc: FSClientPtr = _lib.fs_client_create(
+        self._fc: FSClientPtr = _lib.fs_client_create( # type: ignore
             host.encode("utf-8"), c_uint16(port)
         )
         if not self._fc:
             raise RuntimeError("Failed to create FsClient / connect to server")
 
         # Keep references to callbacks to avoid them being GC'd
-        self._callbacks: list[FsApiCallbackC] = []
+        self._callbacks: list[FsApiCallbackC] = [] # type: ignore
 
     def close(self) -> None:
         if self._fc:
