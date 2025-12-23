@@ -1,19 +1,24 @@
-// #include "handlers/ping.h"
-// #include <string.h>
-// #include <unistd.h>
-// #include <time.h>
+#include "handlers/ping_handler.h"
 
-// void handle_ping(Packet* pkt, int client_sock) {
-//     Packet res;
-//     res.type = PT_PING;
-//     // Lấy thời gian hiện tại
-//     time_t now = time(NULL);
-//     struct tm* t = localtime(&now);
-//     char time_str[64];
-//     strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", t);
-//     PingPayload* p = &res.payload.ping;
-//     strcpy(p->message, "NOW:");
-//     strcat(p->message, time_str);
+
+// Handler for PING command
+void handle_cmd_ping(Conn *c, Frame *f, const char *cmd) {
+    printf("[CMD:PING][INFO] PING received (fd=%d, user_id=%d, request_id=%d)\n", 
+           c->sockfd, c->user_id, f->header.cmd.request_id);
     
-//     write(client_sock, &res, sizeof(res));
-// }
+    // Build response
+    cJSON *response = cJSON_CreateObject();
+    cJSON_AddStringToObject(response, "status", "pong");
+    
+    char *json_resp = cJSON_PrintUnformatted(response);
+    
+    Frame resp;
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
+    
+    pthread_mutex_lock(&c->write_lock);
+    send_frame(c->sockfd, &resp);
+    pthread_mutex_unlock(&c->write_lock);
+    
+    free(json_resp);
+    cJSON_Delete(response);
+}

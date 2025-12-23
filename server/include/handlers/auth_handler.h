@@ -3,6 +3,7 @@
 #include "server.h"
 #include "frame.h"
 #include <stdint.h>
+#include "services/file_service.h"
 
 void handle_login(Conn *c, Frame *f, const char *cmd);
 void handle_register(Conn *c, Frame *f, const char *cmd);

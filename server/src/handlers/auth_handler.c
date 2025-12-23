@@ -83,9 +83,10 @@ void handle_login(Conn *c, Frame *f, const char *cmd) {
         
         // Build success response with token
         char payload[512];
+        int root_folder_id = folder_get_or_create_user_root(user_id);
         snprintf(payload, sizeof(payload), 
-                "{\"success\":true,\"user_id\":%d,\"username\":\"%s\",\"token\":\"%s\",\"expires_in\":86400}",
-                user_id, username, token);
+                "{\"success\":true,\"user_id\":%d,\"username\":\"%s\",\"root_folder_id\":%d,\"token\":\"%s\",\"expires_in\":86400}",
+                user_id, username, root_folder_id, token);
         
         Frame resp;
         build_respond_frame(&resp, request_id, STATUS_OK, payload);

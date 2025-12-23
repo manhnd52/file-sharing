@@ -265,3 +265,80 @@ cJSON* get_folder_info(int folder_id) {
 
     return info;
 }
+
+int delete_folder(int folder_id) {
+    if (!db_global || folder_id <= 0) {
+        return 0; // failure
+    }
+
+    sqlite3_stmt* stmt = NULL;
+    int rc;
+
+    // Bắt đầu transaction để đảm bảo atomic
+    rc = sqlite3_exec(db_global, "BEGIN TRANSACTION;", NULL, NULL, NULL);
+    if (rc != SQLITE_OK) return 0;
+
+    // Xóa files trong folder
+    const char* sql_delete_files = "DELETE FROM files WHERE folder_id = ?";
+    rc = sqlite3_prepare_v2(db_global, sql_delete_files, -1, &stmt, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, folder_id);
+        sqlite3_step(stmt);
+    }
+    sqlite3_finalize(stmt);
+    stmt = NULL;
+
+    // Xóa folder (các subfolders sẽ tự cascade nếu schema đúng)
+    const char* sql_delete_folder = "DELETE FROM folders WHERE id = ?";
+    rc = sqlite3_prepare_v2(db_global, sql_delete_folder, -1, &stmt, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, folder_id);
+        sqlite3_step(stmt);
+    }
+    sqlite3_finalize(stmt);
+
+    // Kết thúc transaction
+    rc = sqlite3_exec(db_global, "COMMIT;", NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_exec(db_global, "ROLLBACK;", NULL, NULL, NULL);
+        return 0;
+    }
+
+    return 1; // success
+}
+
+int delete_file(int file_id) {
+    if (!db_global || file_id <= 0) {
+        return 0; // failure
+    }
+
+    sqlite3_stmt* stmt = NULL;
+    int rc;
+
+    rc = sqlite3_exec(db_global, "BEGIN TRANSACTION;", NULL, NULL, NULL);
+    if (rc != SQLITE_OK) return 0;
+
+    const char* sql_delete_file = "DELETE FROM files WHERE id = ?";
+    rc = sqlite3_prepare_v2(db_global, sql_delete_file, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_exec(db_global, "ROLLBACK;", NULL, NULL, NULL);
+        return 0;
+    }
+
+    sqlite3_bind_int(stmt, 1, file_id);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        sqlite3_exec(db_global, "ROLLBACK;", NULL, NULL, NULL);
+        return 0;
+    }
+
+    rc = sqlite3_exec(db_global, "COMMIT;", NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        sqlite3_exec(db_global, "ROLLBACK;", NULL, NULL, NULL);
+        return 0;
+    }
+
+    return 1; 
+}
