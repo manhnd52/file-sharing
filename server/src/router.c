@@ -50,7 +50,8 @@ void router_handle(Conn *c, Frame *req) {
 
     printf("[ROUTER][DEBUG] Received frame: msg_type=%d, request_id=%d (fd=%d, user_id=%d, logged_in=%d)\n", 
            req->msg_type, request_id, c->sockfd, c->user_id, c->logged_in);
-    if (req->msg_type == MSG_AUTH) {
+    
+           if (req->msg_type == MSG_AUTH) {
         if (c->logged_in) {
             Frame resp;
             build_respond_frame(&resp, request_id, STATUS_NOT_OK,
@@ -97,6 +98,7 @@ void router_handle(Conn *c, Frame *req) {
         char* cmd = cmd_item->valuestring;
         printf("[ROUTER][INFO] CMD request: cmd='%s' (fd=%d, user_id=%d, request_id=%d)\n", 
                cmd, c->sockfd, c->user_id, request_id);
+        
         // Allow LOGIN, REGISTER and AUTH commands without prior authentication
         if (strcmp(cmd, "LOGIN") != 0 &&
             strcmp(cmd, "REGISTER") != 0 &&
@@ -145,16 +147,9 @@ void router_handle(Conn *c, Frame *req) {
                    c->sockfd, request_id);
             return;
         }
-        data_handler(c, req);
+        upload_handler(c, req);
         return;
     }
-    
-    // Default routing by msg_type
-    if (req->msg_type < MAX_MSG_TYPE && routes[req->msg_type]) {
-        routes[req->msg_type](c, req);
-    } else {
-        printf("[ROUTER][ERROR] No handler registered for msg_type=%d (fd=%d, request_id=%d)\n", 
-               req->msg_type, c->sockfd, request_id);
-        // Optional: send error response?
-    }
+
+    return;
 }

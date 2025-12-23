@@ -5,11 +5,14 @@
 #include "handlers/upload_handler.h"
 #include "handlers/auth_handler.h"
 #include "database.h"
+#include "services/file_service.h"
 
 int main() {
-    db_start();
-    
-    // Register AUTH handler
+    // Khởi tạo DB
+    if (!db_start()) {
+        fprintf(stderr, "Failed to start database\n");
+        return 1;
+    }
     
     // Register CMD routes
     register_cmd_route("LIST", handle_cmd_list);
@@ -17,6 +20,7 @@ int main() {
     register_cmd_route("PING", handle_cmd_ping);
     register_cmd_route("MKDIR", handle_cmd_mkdir);
     register_cmd_route("UPLOAD_INIT", upload_init_handler);
+    register_cmd_route("UPLOAD_FINISH", upload_finish_handler);
     register_cmd_route("LOGIN", handle_login);
     register_cmd_route("REGISTER", handle_register);
     register_cmd_route("AUTH", handle_auth_token);
@@ -27,7 +31,8 @@ int main() {
     register_cmd_route("DELETE_FOLDER", handle_cmd_delete_folder);
     register_cmd_route("SHARE_FOLDER", handle_cmd_share_folder);
     register_cmd_route("RENAME_ITEM", handle_cmd_rename_item);
-    
+
     server_start(5555);
+
     return 0;
 }

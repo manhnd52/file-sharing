@@ -9,45 +9,6 @@
 #include <arpa/inet.h>
 
 // Helper: get or create root folder for a user
-static int get_or_create_user_root_folder(int user_id) {
-    if (!db_global || user_id <= 0)
-        return 0;
-
-    sqlite3_stmt *stmt = NULL;
-    int folder_id = 0;
-
-    const char *sql_select =
-        "SELECT id FROM folders WHERE owner_id = ? AND user_root = 1 "
-        "ORDER BY id LIMIT 1";
-    if (sqlite3_prepare_v2(db_global, sql_select, -1, &stmt, NULL) == SQLITE_OK) {
-        sqlite3_bind_int(stmt, 1, user_id);
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-            folder_id = sqlite3_column_int(stmt, 0);
-        }
-    }
-    sqlite3_finalize(stmt);
-
-    if (folder_id > 0)
-        return folder_id;
-
-    // Not found: create one
-    const char *sql_insert =
-        "INSERT INTO folders(name, parent_id, owner_id, user_root) "
-        "VALUES('root', NULL, ?, 1)";
-    if (sqlite3_prepare_v2(db_global, sql_insert, -1, &stmt, NULL) != SQLITE_OK) {
-        return 0;
-    }
-    sqlite3_bind_int(stmt, 1, user_id);
-
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-    if (rc != SQLITE_DONE)
-        return 0;
-
-    folder_id = (int)sqlite3_last_insert_rowid(db_global);
-    return folder_id;
-}
-
 void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
     (void)cmd;
 
@@ -79,7 +40,7 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
 
     // Resolve root folder for user if folder_id == 0
     if (current_folder_id == 0) {
-        current_folder_id = get_or_create_user_root_folder(c->user_id);
+        current_folder_id = folder_get_or_create_user_root(c->user_id);
         if (current_folder_id <= 0) {
             Frame resp;
             build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
@@ -312,7 +273,7 @@ void handle_cmd_mkdir(Conn *c, Frame *f, const char *cmd) {
 
     // If parent_id == 0, use (or create) user's root folder as parent
     if (parent_id == 0) {
-        parent_id = get_or_create_user_root_folder(c->user_id);
+        parent_id = folder_get_or_create_user_root(c->user_id);
     }
 
     if (parent_id <= 0) {
@@ -384,7 +345,7 @@ void handle_cmd_list_own_folders(Conn *c, Frame *f, const char *cmd) {
         return;
     }
 
-    int root_id = get_or_create_user_root_folder(c->user_id);
+    int root_id = folder_get_or_create_user_root(c->user_id);
     if (root_id <= 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,

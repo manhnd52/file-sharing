@@ -172,11 +172,11 @@ Connect* connect_create(const char *host, uint16_t port){
     pthread_detach(tid);
 
     // thread heartbeat
-    if(pthread_create(&c->heartbeat_tid, NULL, heartbeat_thread_func, c) != 0){
-        perror("pthread_create heartbeat");
-        // Non-fatal? Or fatal? Let's treat as warning but continue, or fail.
-        // For now, let's just print error.
-    }
+    // if(pthread_create(&c->heartbeat_tid, NULL, heartbeat_thread_func, c) != 0){
+    //     perror("pthread_create heartbeat");
+    //     // Non-fatal? Or fatal? Let's treat as warning but continue, or fail.
+    //     // For now, let's just print error.
+    // }
 
     return c;
 }

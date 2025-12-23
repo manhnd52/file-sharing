@@ -25,12 +25,10 @@ bool db_start() {
             return false;
         }
         fclose(f);
-
-            // Tạo schema
-        return db_init(DB_SCHEMA_PATH);
-    } else {
-        return sqlite3_open(DB_PATH, &db_global) == SQLITE_OK;
-    }
+        // Tạo schema
+        db_init(DB_SCHEMA_PATH);
+    } 
+    return sqlite3_open(DB_PATH, &db_global) == SQLITE_OK;
 }
 
 bool db_init(const char* sql_file) {   

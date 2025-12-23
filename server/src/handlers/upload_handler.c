@@ -1,5 +1,4 @@
 #include "handlers/upload_handler.h"
-#include "frame.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,19 +9,11 @@
 
 UploadSession ss[MAX_SESSION];
 
-static int bytes_to_uuid_string(const uint8_t id[SESSIONID_SIZE], char out[37]) {
-	// Format as UUID v4 style: 8-4-4-4-12 from 16 bytes
-	// If bytes already a UUID, this will render correctly; otherwise deterministic formatting.
-	static const int idxs[16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
-	// snprintf into out
-	int n = snprintf(out, 37,
-									 "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-									 id[idxs[0]], id[idxs[1]], id[idxs[2]], id[idxs[3]],
-									 id[idxs[4]], id[idxs[5]],
-									 id[idxs[6]], id[idxs[7]],
-									 id[idxs[8]], id[idxs[9]],
-									 id[idxs[10]], id[idxs[11]], id[idxs[12]], id[idxs[13]], id[idxs[14]], id[idxs[15]]);
-	return (n == 36) ? 0 : -1;
+static void respond_upload_finish_error(Conn *c, Frame *f, const char *payload) {
+	if (!c || !f || !payload) return;
+	Frame err_frame;
+	build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK, payload);
+	send_frame(c->sockfd, &err_frame);
 }
 
 static int ensure_tmp_dir() {
@@ -38,7 +29,7 @@ static int ensure_tmp_dir() {
 static int find_session(const uint8_t sid[SESSIONID_SIZE], UploadSession **out) {
 	// find existing
 	for (int i = 0; i < MAX_SESSION; ++i) {
-		if (memcmp(ss[i].session_id, sid, SESSIONID_SIZE) == 0 && ss[i].filepath[0] != '\0') {
+		if (memcmp(ss[i].session_id, sid, SESSIONID_SIZE) == 0 && ss[i].file_name[0] != '\0') {
 			*out = &ss[i];
 			return 0;
 		}
@@ -46,19 +37,10 @@ static int find_session(const uint8_t sid[SESSIONID_SIZE], UploadSession **out) 
 	return -1;
 }
 
-// Generate random session ID ~ UUID ở dạng byte array
-static int generate_session_id(uint8_t out[SESSIONID_SIZE]) {
-	int fd = open("/dev/urandom", O_RDONLY);
-	if (fd < 0) return -1;
-	ssize_t r = read(fd, out, SESSIONID_SIZE);
-	close(fd);
-	return (r == SESSIONID_SIZE) ? 0 : -1;
-}
-
 /*
 Handler for received DATA frames (file upload chunks)
 */
-void data_handler(Conn *c, Frame *data) {
+void upload_handler(Conn *c, Frame *data) {
 	if (!c || !data) return;
 	if (data->msg_type != MSG_DATA) return;
 
@@ -120,7 +102,7 @@ void data_handler(Conn *c, Frame *data) {
 		return;
 	}
 
-	off_t offset = (off_t)chunk_index * (off_t)chunk_length;
+	off_t offset = ((off_t)chunk_index - 1) * (off_t)chunk_length;
 	ssize_t w = pwrite(fd, data->payload, data->payload_len, offset);
 	if (w < 0 || (size_t)w != data->payload_len) {
 		Frame err_frame;
@@ -157,7 +139,9 @@ void data_handler(Conn *c, Frame *data) {
 }
 
 /*
-Handler for UPLOAD_INIT command to start a new upload session
+Handler for UPLOAD_INIT command to start a new upload session when receiving CMD frame with cmd = "UPLOAD_INIT"
+  Expected JSON payload: { cmd: "UPLOAD_INIT", path: string, file_size: number, chunk_size: number }
+  Response JSON payload: { sessionId: string }
 */
 void upload_init_handler(Conn *c, Frame *f) {
 	if (!c || !f) return;
@@ -165,47 +149,38 @@ void upload_init_handler(Conn *c, Frame *f) {
 	// Expect JSON payload { cmd: "UPLOAD_INIT", path: string, file_size: number, chunk_size: number }
 	cJSON *root = cJSON_Parse((const char *)f->payload);
 	cJSON *cmd = cJSON_GetObjectItemCaseSensitive(root, "cmd");
-	cJSON *pathItem = cJSON_GetObjectItemCaseSensitive(root, "path");
+	cJSON *parentFolderIdItem = cJSON_GetObjectItemCaseSensitive(root, "parent_folder_id");
+	cJSON *fileName = cJSON_GetObjectItemCaseSensitive(root, "file_name");
 	cJSON *fileSizeItem = cJSON_GetObjectItemCaseSensitive(root, "file_size");
 	cJSON *chunkSizeItem = cJSON_GetObjectItemCaseSensitive(root, "chunk_size");
+	
 	if (!cJSON_IsString(cmd) || strcmp(cmd->valuestring, "UPLOAD_INIT") != 0 ||
-		!cJSON_IsString(pathItem) || !cJSON_IsNumber(fileSizeItem) || !cJSON_IsNumber(chunkSizeItem)) {
+		!cJSON_IsNumber(parentFolderIdItem) || !cJSON_IsString(fileName) || !cJSON_IsNumber(fileSizeItem) || !cJSON_IsNumber(chunkSizeItem)) {
 		cJSON_Delete(root);
 		Frame err_frame;
 		build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
-							"{\"error\": \"Missing or invalid fields (cmd, path, file_size, chunk_size)\"}");
+							"{\"error\": \"Missing or invalid fields (cmd, parent_folder_id, file_name, file_size, chunk_size)\"}");
 		send_frame(c->sockfd, &err_frame);
 		return;
 	}
+
 	uint32_t chunk_length = (uint32_t)chunkSizeItem->valuedouble;
-	const char *upload_path = pathItem->valuestring;
+	const char *file_name = fileName->valuestring;
+	int parent_folder_id = parentFolderIdItem->valueint;
 	uint64_t file_size = (uint64_t)fileSizeItem->valuedouble;
-	cJSON_Delete(root);
 
-	if (ensure_tmp_dir() != 0) {
-		Frame err_frame;
-		build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
-							"{\"error\": \"Failed to ensure tmp directory\"}");
-		send_frame(c->sockfd, &err_frame);
-		return;
-	}
+	uint8_t sid[BYTE_UUID_SIZE];
 
-	uint8_t sid[SESSIONID_SIZE];
-	if (generate_session_id(sid) != 0) {
-		Frame err_frame;
-		build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
-							"{\"error\": \"Failed to generate session id\"}");
-		send_frame(c->sockfd, &err_frame);
-		return;
-	}
+	generate_byte_uuid(sid);
 
 	// Create session slot
 	UploadSession *us = NULL;
 	for (int i = 0; i < MAX_SESSION; ++i) {
-		if (ss[i].filepath[0] == '\0') {
+		if (ss[i].file_name[0] == '\0') {
 			memset(&ss[i], 0, sizeof(UploadSession));
 			memcpy(ss[i].session_id, sid, SESSIONID_SIZE);
 			char uuid_str[37];
+
 			if (bytes_to_uuid_string(sid, uuid_str) != 0) {
 				Frame err_frame;
 				build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
@@ -215,8 +190,9 @@ void upload_init_handler(Conn *c, Frame *f) {
 			}
 
 			// Store upload file path to use after all chunks received
-			snprintf(ss[i].filepath, sizeof(ss[i].filepath), "%s", upload_path);
+			snprintf(ss[i].file_name, sizeof(ss[i].file_name), "%s", file_name);
 			snprintf(ss[i].uuid_str, sizeof(ss[i].uuid_str), "%s", uuid_str);
+			ss[i].parent_folder_id = parent_folder_id;
 			ss[i].last_received_chunk = 0;
 			ss[i].chunk_length = chunk_length;
 			ss[i].total_received_size = 0;
@@ -241,4 +217,74 @@ void upload_init_handler(Conn *c, Frame *f) {
 	Frame ok;
 	build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK, payload);
 	send_frame(c->sockfd, &ok);
+	cJSON_Delete(root);
+}
+
+void upload_finish_handler(Conn *c, Frame *f) {
+	if (!c || !f) return;
+
+	cJSON *root = cJSON_Parse((const char *)f->payload);
+	if (!root) {
+		respond_upload_finish_error(c, f, "{\"error\": \"invalid_json\"}");
+		return;
+	}
+
+	cJSON *session_id_json = cJSON_GetObjectItemCaseSensitive(root, "session_id");
+	if (!session_id_json || !cJSON_IsString(session_id_json) || session_id_json->valuestring[0] == '\0') {
+		respond_upload_finish_error(c, f, "{\"error\": \"missing_session_id\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	const char *session_id_str = session_id_json->valuestring;
+	uint8_t session_id[BYTE_UUID_SIZE];
+
+	if (uuid_string_to_bytes(session_id_str, session_id) != 0) {
+		respond_upload_finish_error(c, f, "{\"error\": \"invalid_session_id\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	UploadSession *us = NULL;
+	if (find_session(session_id, &us) != 0 || !us) {
+		respond_upload_finish_error(c, f, "{\"error\": \"session_not_found\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	if (us->expected_file_size > 0 && us->total_received_size != us->expected_file_size) {
+		respond_upload_finish_error(c, f, "{\"error\": \"incomplete_upload\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	cJSON_Delete(root);
+
+	// Move file from tmp to final storage location
+	char tmp_path[256];
+	snprintf(tmp_path, sizeof(tmp_path), "data/storage/tmp/upload_%s", us->uuid_str);
+	
+	// Remove "upload_" prefix to get final path
+	char final_path[256];
+	snprintf(final_path, sizeof(final_path),
+         "data/storage/%s",
+         us->uuid_str);
+	
+	// Move file
+	if (rename(tmp_path, final_path) != 0) {
+		perror("rename failed");
+	}
+
+	// Save file metadata to database, associate with user, etc. (omitted for brevity)
+	file_save_metadata(c->user_id, us->parent_folder_id, us->file_name, us->uuid_str, us->total_received_size);
+
+	// Clear session
+	memset(us, 0, sizeof(UploadSession));
+
+	// Respond success
+	Frame ok;
+	build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK, "{\"status\": \"upload_finished\"}");
+	send_frame(c->sockfd, &ok);
+
+	return;
 }

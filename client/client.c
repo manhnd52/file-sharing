@@ -12,6 +12,7 @@
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_cond = PTHREAD_COND_INITIALIZER;
 static uint8_t g_session_id[SESSIONID_SIZE];
+static char g_uuid_session[37];
 static int g_session_ready = 0;
 static uint32_t g_upload_chunk_size = 0;
 static char g_token[256] = {0};
@@ -109,8 +110,11 @@ static void handle_upload_init_resp(Frame *resp) {
     return;
 
   cJSON *sid = cJSON_GetObjectItemCaseSensitive(json, "sessionId");
+
   if (cJSON_IsString(sid) && sid->valuestring) {
     uint8_t tmp[SESSIONID_SIZE];
+    strncpy(g_uuid_session, sid->valuestring, sizeof(g_uuid_session) - 1);
+    g_uuid_session[sizeof(g_uuid_session) - 1] = '\0';
     if (parse_uuid_to_bytes(sid->valuestring, tmp) == 0) {
       pthread_mutex_lock(&g_lock);
       memcpy(g_session_id, tmp, SESSIONID_SIZE);
@@ -266,11 +270,14 @@ static void cli_cmd_upload_demo(void) {
   Frame up_init;
   cJSON *up_json = cJSON_CreateObject();
   cJSON_AddStringToObject(up_json, "cmd", "UPLOAD_INIT");
-  cJSON_AddStringToObject(up_json, "path", "data/storage/tmp/client_cli.bin");
-  cJSON_AddNumberToObject(up_json, "file_size", 32);
+  cJSON_AddNumberToObject(up_json, "parent_folder_id", 1);
+  cJSON_AddStringToObject(up_json, "file_name", "client_cli.bin");
+  cJSON_AddNumberToObject(up_json, "file_size", 16);
   cJSON_AddNumberToObject(up_json, "chunk_size", 16);
   g_upload_chunk_size = 16;
+
   char *up_payload = cJSON_PrintUnformatted(up_json);
+
   build_cmd_frame(&up_init, 0, up_payload);
   printf("Sending UPLOAD_INIT...\n");
   g_conn->send_cmd(g_conn, &up_init, handle_upload_init_resp);
@@ -297,6 +304,19 @@ static void cli_cmd_upload_demo(void) {
   printf("Sending DATA chunk_index=1 chunk_length=%u payload_len=%zu...\n",
          g_upload_chunk_size, chunk_len);
   g_conn->send_data(g_conn, &data_frame, handle_response);
+
+  // Send UPLOAD_FINISH command to complete upload 
+  Frame up_finish;
+  cJSON *finish_json = cJSON_CreateObject();
+  cJSON_AddStringToObject(finish_json, "cmd", "UPLOAD_FINISH");
+  cJSON_AddStringToObject(finish_json, "session_id", g_uuid_session);
+
+  char *finish_payload = cJSON_PrintUnformatted(finish_json);
+  build_cmd_frame(&up_finish, 0, finish_payload);
+  printf("Sending UPLOAD_FINISH...\n");
+  g_conn->send_cmd(g_conn, &up_finish, handle_response);
+  free(finish_payload);
+  cJSON_Delete(finish_json);
 }
 
 static void cli_print_token(void) {

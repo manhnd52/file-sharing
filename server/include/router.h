@@ -4,6 +4,7 @@
 
 #include "frame.h"
 #include "server.h"
+
 // Handler function pointer
 typedef void (*FrameHandler)(Conn *sc, Frame *f);
 
