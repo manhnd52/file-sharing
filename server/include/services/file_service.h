@@ -14,6 +14,8 @@ int folder_save_metadata(int owner_id, int parent_folder_id, const char* new_fol
 
 // crud folder, file metadata
 cJSON* get_folder_info(int folder_id);
+cJSON* get_file_info(int file_id);
+
 int delete_folder(int folder_id);
 int delete_file(int file_id);
 

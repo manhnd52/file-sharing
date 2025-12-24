@@ -5,7 +5,6 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include "services/file_service.h"
 
 #define MAX_CONNS 1024
 #define BUF_SIZE 8192

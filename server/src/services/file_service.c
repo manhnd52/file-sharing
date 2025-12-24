@@ -342,3 +342,56 @@ int delete_file(int file_id) {
 
     return 1; 
 }
+
+/*
+Lấy thông tin file theo file ID → trả về cJSON object chứa metadata file
+Output cJSON object mẫu:
+```
+{
+    "file_id": 1,
+    "file_name": "report.pdf",
+    "folder_id": 2,
+    "owner_id": 3,
+    "storage_hash": "550e8400-e29b-41d4-a716-446655440000",
+    "size": 1048576
+}
+```
+ */ 
+cJSON* get_file_info(int file_id) {
+    cJSON* file_info = cJSON_CreateNull();
+    if (!db_global || file_id <= 0) {
+        return file_info;
+    }
+
+    sqlite3_stmt* stmt = NULL;
+    const char* sql_info =
+        "SELECT name, folder_id, owner_id, storage_hash, size FROM files WHERE id = ?";
+    if (sqlite3_prepare_v2(db_global, sql_info, -1, &stmt, NULL) != SQLITE_OK) {
+        return file_info;
+    }
+
+    sqlite3_bind_int(stmt, 1, file_id);
+
+    if (sqlite3_step(stmt) != SQLITE_ROW) {
+        sqlite3_finalize(stmt);
+        return file_info;
+    }
+
+    const unsigned char* name = sqlite3_column_text(stmt, 0);
+    int folder_id = sqlite3_column_int(stmt, 1);
+    int owner_id = sqlite3_column_int(stmt, 2);
+    const unsigned char* storage_hash = sqlite3_column_text(stmt, 3);
+    sqlite3_int64 size = sqlite3_column_int64(stmt, 4);
+
+    file_info = cJSON_CreateObject();
+    cJSON_AddNumberToObject(file_info, "file_id", file_id);
+    cJSON_AddStringToObject(file_info, "file_name", name ? (const char*)name : "");
+    cJSON_AddNumberToObject(file_info, "folder_id", folder_id);
+    cJSON_AddNumberToObject(file_info, "owner_id", owner_id);
+    cJSON_AddStringToObject(file_info, "storage_hash", storage_hash ? (const char*)storage_hash : "");
+    cJSON_AddNumberToObject(file_info, "file_size", (double)size);
+
+    sqlite3_finalize(stmt);
+
+    return file_info;
+}

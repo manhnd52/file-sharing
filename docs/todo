@@ -1,1 +1,8 @@
-- [] Check token cho gói AUTH → sau khi check xong thì gán vào Conn userId;
+- [] Hoàn thành kiểm soát quyền ở service
+- [] Một số hàm tương tác folder ở service
+- [] Download 
+
+Ý tưởng chuyển hết tất các các req theo path → id. → Bảo Khôi bỏ phần đường link.
+
+
+

@@ -7,6 +7,7 @@
 #include "handlers/ping_handler.h"
 #include "database.h"
 #include "services/file_service.h"
+#include "handlers/download_handler.h"
 
 int main() {
     // Khởi tạo DB
@@ -31,9 +32,13 @@ int main() {
     register_cmd_route("DELETE_FOLDER", handle_cmd_delete_folder);
     register_cmd_route("SHARE_FOLDER", handle_cmd_share_folder);
     register_cmd_route("RENAME_ITEM", handle_cmd_rename_item);
+    register_cmd_route("DOWNLOAD_INIT", download_init_handler);
+    register_cmd_route("DOWNLOAD_CHUNK", download_chunk_handler);
+    register_cmd_route("DOWNLOAD_FINISH", download_finish_handler);
 
-    delete_folder(21);
-
+    char *out = cJSON_Print(get_file_info(6)); // Test hàm mới thêm
+    printf("Test get_file_info output: %s\n", out);
+    free(out);
     server_start(5555);
 
     return 0;

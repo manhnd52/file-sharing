@@ -18,6 +18,21 @@ static uint32_t g_upload_chunk_size = 0;
 static char g_token[256] = {0};
 static Connect *g_conn = NULL;
 
+#define DOWNLOAD_DEMO_OUTPUT_PATH "./storage/download_file_6.bin"
+
+static pthread_mutex_t g_download_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t g_download_cond = PTHREAD_COND_INITIALIZER;
+static uint8_t g_download_session_id[SESSIONID_SIZE];
+static char g_download_uuid_session[37];
+static uint32_t g_download_chunk_size = 0;
+static uint64_t g_download_file_size = 0;
+static char g_download_file_name[256];
+static int g_download_init_done = 0;
+static int g_download_init_success = 0;
+static int g_download_chunk_done = 0;
+static int g_download_chunk_ok = 0;
+static uint64_t g_download_bytes_received = 0;
+
 static int hexval(char c) {
     if ('0' <= c && c <= '9') return c - '0';
     if ('a' <= c && c <= 'f') return c - 'a' + 10;
@@ -141,12 +156,15 @@ static void cli_help(void) {
   printf("  logout                     - Logout and invalidate token\n");
   printf("  ping                       - Send PING\n");
   printf("  list [path]                - List files at path\n");
-  printf("  upload_demo                - Demo upload: INIT + one DATA chunk\n");
+  printf("  upload_demo                - Demo upload: INIT + one DATA chunk + FINISH\n");
+  printf("  download_demo               - Demo download: INIT + one DATA chunk + FINISH\n");
   printf("  token                      - Print stored auth token\n");
   printf("  exit / quit                - Exit client\n");
+
 }
 
 static void cli_cmd_register(const char *username, const char *password) {
+  
   if (!username || !password) {
     printf("Usage: register <username> <password>\n");
     return;
@@ -319,6 +337,195 @@ static void cli_cmd_upload_demo(void) {
   cJSON_Delete(finish_json);
 }
 
+static void handle_download_init_resp(Frame *resp) {
+  print_response(resp);
+
+  pthread_mutex_lock(&g_download_lock);
+  g_download_init_done = 1;
+  g_download_init_success = 0;
+  g_download_chunk_size = 0;
+  g_download_file_size = 0;
+  g_download_file_name[0] = '\0';
+  g_download_chunk_done = 0;
+  g_download_chunk_ok = 0;
+  memset(g_download_uuid_session, 0, sizeof(g_download_uuid_session));
+  memset(g_download_session_id, 0, sizeof(g_download_session_id));
+
+  if (resp->header.resp.status == STATUS_OK && resp->payload_len > 0) {
+    cJSON *json = cJSON_Parse((char *)resp->payload);
+    if (json) {
+      cJSON *sid = cJSON_GetObjectItemCaseSensitive(json, "sessionId");
+      cJSON *chunk_size_json = cJSON_GetObjectItemCaseSensitive(json,
+                                                                "chunk_size");
+      cJSON *file_size_json = cJSON_GetObjectItemCaseSensitive(json,
+                                                               "file_size");
+      cJSON *file_name_json = cJSON_GetObjectItemCaseSensitive(json,
+                                                               "file_name");
+      if (cJSON_IsString(sid) && sid->valuestring && cJSON_IsNumber(chunk_size_json) &&
+          cJSON_IsNumber(file_size_json)) {
+        uint8_t sid_bytes[SESSIONID_SIZE];
+        if (parse_uuid_to_bytes(sid->valuestring, sid_bytes) == 0) {
+          memcpy(g_download_session_id, sid_bytes, SESSIONID_SIZE);
+          strncpy(g_download_uuid_session, sid->valuestring,
+                  sizeof(g_download_uuid_session) - 1);
+          g_download_uuid_session[sizeof(g_download_uuid_session) - 1] = '\0';
+          g_download_chunk_size = (uint32_t)chunk_size_json->valuedouble;
+          g_download_file_size = (uint64_t)file_size_json->valuedouble;
+          strncpy(g_download_file_name, file_name_json->valuestring,
+                  sizeof(g_download_file_name) - 1);
+          g_download_file_name[sizeof(g_download_file_name) - 1] = '\0';
+          g_download_init_success = 1;
+        }
+      }
+      cJSON_Delete(json);
+    }
+  }
+
+  pthread_cond_signal(&g_download_cond);
+  pthread_mutex_unlock(&g_download_lock);
+}
+
+static void handle_download_chunk_resp(Frame *resp) {
+  if (!resp)
+    return;
+
+  if (resp->msg_type == MSG_RESPOND) {
+    print_response(resp);
+    pthread_mutex_lock(&g_download_lock);
+    g_download_chunk_done = 1;
+    g_download_chunk_ok = (resp->header.resp.status == STATUS_OK);
+    pthread_cond_signal(&g_download_cond);
+    pthread_mutex_unlock(&g_download_lock);
+    return;
+  }
+
+  if (resp->msg_type != MSG_DATA)
+    return;
+
+  uint32_t chunk_index = resp->header.data.chunk_index;
+  size_t payload_len = resp->payload_len;
+  printf("Received download chunk %u (%zu bytes)\n", chunk_index, payload_len);
+
+  FILE *fp = fopen(DOWNLOAD_DEMO_OUTPUT_PATH, "ab");
+  if (fp) {
+    fwrite(resp->payload, 1, payload_len, fp);
+    fclose(fp);
+  } else {
+    printf("Warning: Could not write download chunk to %s\n",
+           DOWNLOAD_DEMO_OUTPUT_PATH);
+  }
+
+  pthread_mutex_lock(&g_download_lock);
+  g_download_bytes_received += payload_len;
+  g_download_chunk_done = 1;
+  g_download_chunk_ok = 1;
+  pthread_cond_signal(&g_download_cond);
+  pthread_mutex_unlock(&g_download_lock);
+}
+
+static void cli_cmd_download_demo(void) {
+  pthread_mutex_lock(&g_download_lock);
+  g_download_init_done = 0;
+  g_download_init_success = 0;
+  g_download_chunk_done = 0;
+  g_download_chunk_ok = 0;
+  g_download_bytes_received = 0;
+  g_download_chunk_size = 0;
+  g_download_file_size = 0;
+  memset(g_download_uuid_session, 0, sizeof(g_download_uuid_session));
+  memset(g_download_session_id, 0, sizeof(g_download_session_id));
+  pthread_mutex_unlock(&g_download_lock);
+
+  cJSON *init_json = cJSON_CreateObject();
+  cJSON_AddStringToObject(init_json, "cmd", "DOWNLOAD_INIT");
+  cJSON_AddNumberToObject(init_json, "file_id", 6);
+  cJSON_AddNumberToObject(init_json, "chunk_size", 4096);
+  char *init_payload = cJSON_PrintUnformatted(init_json);
+
+  Frame init_frame;
+  build_cmd_frame(&init_frame, 0, init_payload);
+  printf("Sending DOWNLOAD_INIT for file_id=6...\n");
+  g_conn->send_cmd(g_conn, &init_frame, handle_download_init_resp);
+
+  free(init_payload);
+  cJSON_Delete(init_json);
+
+  pthread_mutex_lock(&g_download_lock);
+  while (!g_download_init_done) {
+    pthread_cond_wait(&g_download_cond, &g_download_lock);
+  }
+
+  int init_success = g_download_init_success;
+  char session_id_copy[37] = {0};
+  uint32_t chunk_size = g_download_chunk_size;
+  uint64_t file_size = g_download_file_size;
+  if (init_success) {
+    memcpy(session_id_copy, g_download_uuid_session, sizeof(session_id_copy));
+  }
+  pthread_mutex_unlock(&g_download_lock);
+
+  if (!init_success) {
+    printf("Download initialization failed, aborting demo.\n");
+    return;
+  }
+
+  printf("Download session ready: sessionId=%s chunk_size=%u file_size=%llu\n",
+         session_id_copy, chunk_size, (unsigned long long)file_size);
+
+  size_t len = snprintf(NULL, 0, "./storage/%s", g_download_file_name) + 1;
+  printf("Preparing to save download to %s\n", g_download_file_name);
+  char *out_path = malloc(len);
+
+  snprintf(out_path, len, "./storage/%s", g_download_file_name);  
+  FILE *out = fopen(out_path, "wb");
+  if (out) {
+    fclose(out);
+  } else {
+    printf("Warning: Could not reset %s before download\n",
+           out_path);
+  }
+
+  cJSON *chunk_json = cJSON_CreateObject();
+  cJSON_AddStringToObject(chunk_json, "cmd", "DOWNLOAD_CHUNK");
+  cJSON_AddStringToObject(chunk_json, "session_id", session_id_copy);
+  cJSON_AddNumberToObject(chunk_json, "chunk_index", 1);
+  char *chunk_payload = cJSON_PrintUnformatted(chunk_json);
+  Frame chunk_frame;
+  build_cmd_frame(&chunk_frame, 0, chunk_payload);
+  printf("Requesting chunk_index=1...\n");
+  g_conn->send_cmd(g_conn, &chunk_frame, handle_download_chunk_resp);
+  free(chunk_payload);
+  cJSON_Delete(chunk_json);
+
+  pthread_mutex_lock(&g_download_lock);
+  while (!g_download_chunk_done) {
+    pthread_cond_wait(&g_download_cond, &g_download_lock);
+  }
+  int chunk_success = g_download_chunk_ok;
+  uint64_t received = g_download_bytes_received;
+  pthread_mutex_unlock(&g_download_lock);
+
+  if (!chunk_success) {
+    printf("Download chunk request failed, aborting demo.\n");
+    return;
+  }
+
+  printf("Chunk download completed, %llu bytes saved to %s\n",
+         (unsigned long long)received, DOWNLOAD_DEMO_OUTPUT_PATH);
+
+  cJSON *finish_json = cJSON_CreateObject();
+  cJSON_AddStringToObject(finish_json, "cmd", "DOWNLOAD_FINISH");
+  cJSON_AddStringToObject(finish_json, "session_id", session_id_copy);
+
+  char *finish_payload = cJSON_PrintUnformatted(finish_json);
+  Frame finish_frame;
+  build_cmd_frame(&finish_frame, 0, finish_payload);
+  printf("Sending DOWNLOAD_FINISH...\n");
+  g_conn->send_cmd(g_conn, &finish_frame, handle_response);
+  free(finish_payload);
+  cJSON_Delete(finish_json);
+}
+
 static void cli_print_token(void) {
   if (g_token[0] == '\0') {
     printf("No token stored.\n");
@@ -385,6 +592,8 @@ static void cli_loop(void) {
       cli_cmd_list(path);
     } else if (strcmp(cmd, "upload_demo") == 0) {
       cli_cmd_upload_demo();
+    } else if (strcmp(cmd, "download_demo") == 0) {
+      cli_cmd_download_demo();
     } else if (strcmp(cmd, "token") == 0) {
       cli_print_token();
     } else {
