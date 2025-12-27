@@ -184,7 +184,7 @@ void check_timeouts(Connect *c) {
 
 ```c
 // 1. Connect to server
-Connect *conn = connect_create("127.0.0.1", 5555);
+Connect *conn = connect_create("127.0.0.1", 5555, 10);
 
 // 2. Define callback
 void my_callback(Frame *resp) {

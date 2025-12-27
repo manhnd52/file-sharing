@@ -4,48 +4,18 @@
 #include <stdint.h>
 #include <pthread.h>
 #include "frame.h"
-
 #include <time.h>
 
-#define MAX_PENDING_REQUESTS 1024
-#define HEARTBEAT_INTERVAL 10
-#define REQUEST_TIMEOUT 15
-
-typedef struct Connect Connect;
-typedef void (*resp_callback)(Frame *resp);
-typedef void (*disconnect_cb)(int status);
-
-struct Connect {
+typedef struct Connect {
     int sockfd;
-
-    // pending requests
-    struct PendingReq {
-        uint32_t request_id;
-        resp_callback cb;
-        time_t sent_time;
-        int in_use; // 0: free, 1: used
-    } pending[MAX_PENDING_REQUESTS];
-
-    pthread_mutex_t pending_lock;
     uint32_t request_counter;
     pthread_mutex_t request_lock;
-
-    
-    // Heartbeat
     time_t last_sent_time;
-    int keep_alive; // 1: running, 0: stop
-    pthread_t heartbeat_tid;
+    int timeout_seconds;
+} Connect;
 
-    // --- function pointers ---
-    int (*send_auth)(Connect *c, Frame *f, resp_callback cb);
-    int (*send_cmd)(Connect *c, Frame *f, resp_callback cb);
-    int (*send_data)(Connect *c, Frame *f, resp_callback cb);
-    disconnect_cb disconnect_cb;
-    void (*destroy)(Connect *c);
-};
-
-// --- API tạo/hủy Connect ---
-Connect* connect_create(const char *host, uint16_t port);
+Connect* connect_create(const char *host, uint16_t port, int timeout_seconds);
 void connect_destroy(Connect *c);
+int connect_send_request(Connect *c, Frame *f, Frame *resp);
 
 #endif

@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -I../protocol -Iinclude -Wall
 LDFLAGS = -lpthread
 
-SRC = client.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c
+SRC = src/client.c src/api/auth_api.c src/api/file_api.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c
 SRC_TEST = client_test.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c
 OBJ = $(patsubst %.c, %.o, $(SRC))
 OBJ_TEST = $(patsubst %.c, %.o, $(SRC_TEST))
