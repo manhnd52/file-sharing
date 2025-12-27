@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -I../protocol -Wall
+CFLAGS = -I../protocol -Iinclude -Wall
 LDFLAGS = -lpthread
 
 SRC = client.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c
