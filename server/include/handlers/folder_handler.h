@@ -13,7 +13,11 @@ void handle_cmd_mkdir(Conn *c, Frame *f, const char *cmd);
 void handle_cmd_list_own_folders(Conn *c, Frame *f, const char *cmd);
 void handle_cmd_list_shared_folders(Conn *c, Frame *f, const char *cmd);
 void handle_cmd_delete_folder(Conn *c, Frame *f, const char *cmd);
+void handle_cmd_delete_file(Conn *c, Frame *f, const char *cmd);
 void handle_cmd_share_folder(Conn *c, Frame *f, const char *cmd);
+void handle_cmd_share_file(Conn *c, Frame *f, const char *cmd);
+void handle_cmd_list_permissions(Conn *c, Frame *f, const char *cmd);
+void handle_cmd_update_permission(Conn *c, Frame *f, const char *cmd);
 void handle_cmd_rename_item(Conn *c, Frame *f, const char *cmd);
 
 #endif

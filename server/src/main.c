@@ -8,6 +8,7 @@
 #include "database.h"
 #include "services/file_service.h"
 #include "handlers/download_handler.h"
+#include <stdlib.h>
 
 int main() {
     // Khởi tạo DB
@@ -28,7 +29,11 @@ int main() {
     register_cmd_route("LIST", handle_cmd_list);
     register_cmd_route("MKDIR", handle_cmd_mkdir);
     register_cmd_route("DELETE_FOLDER", handle_cmd_delete_folder);
+    register_cmd_route("DELETE_FILE", handle_cmd_delete_file);
     register_cmd_route("SHARE_FOLDER", handle_cmd_share_folder);
+    register_cmd_route("SHARE_FILE", handle_cmd_share_file);
+    register_cmd_route("LIST_PERMISSIONS", handle_cmd_list_permissions);
+    register_cmd_route("UPDATE_PERMISSION", handle_cmd_update_permission);
     register_cmd_route("RENAME_ITEM", handle_cmd_rename_item);
 
     register_cmd_route("LIST_OWN_FOLDERS", handle_cmd_list_own_folders);

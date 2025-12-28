@@ -6,11 +6,6 @@ CREATE TABLE IF NOT EXISTS users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
--- Seed data: users
-INSERT INTO users (username, password) VALUES
-('demo', 'demo'),
-('alice', 'alice123'),
-('bob', 'bob456');
 
 -- Table: sessions
 CREATE TABLE IF NOT EXISTS sessions (
@@ -20,11 +15,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at DATETIME NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
-
--- Seed data: sessions
-INSERT INTO sessions (user_id, token, expires_at) VALUES
-(1, 'token_alice_1', datetime('now','+1 day')),
-(2, 'token_bob_1', datetime('now','+1 day'));
 
 -- Table: folders
 CREATE TABLE IF NOT EXISTS folders (
@@ -37,16 +27,6 @@ CREATE TABLE IF NOT EXISTS folders (
     FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Seed data: folders
--- user root folders
-INSERT INTO folders (name, parent_id, owner_id, user_root) VALUES
-('alice_root', NULL, 1, 1),
-('bob_root', NULL, 2, 1);
-
--- subfolders
-INSERT INTO folders (name, parent_id, owner_id, user_root) VALUES
-('alice_docs', 1, 1, 0),
-('bob_images', 2, 2, 0);
 
 -- Table: files
 CREATE TABLE IF NOT EXISTS files (
@@ -61,10 +41,6 @@ CREATE TABLE IF NOT EXISTS files (
     FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Seed data: files
-INSERT INTO files (name, folder_id, owner_id, storage_hash, size) VALUES
-('alice_resume.pdf', 3, 1, 'hash_file1', 102400),
-('bob_photo.png', 4, 2, 'hash_file2', 204800);
 
 -- Table: permissions
 CREATE TABLE IF NOT EXISTS permissions (
@@ -75,9 +51,3 @@ CREATE TABLE IF NOT EXISTS permissions (
     permission INTEGER NOT NULL CHECK(permission IN (0,1,2,3)),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
-
--- Seed data: permissions
--- alice can read/write bob's folder
-INSERT INTO permissions (target_type, target_id, user_id, permission) VALUES
-(1, 4, 1, 2),  -- folder permission: alice can write bob_images
-(0, 2, 1, 1);  -- file permission: alice can read bob_photo.png

@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -I../protocol -Iinclude -Wall
+CFLAGS = -I../protocol -Iinclude -Wall -fPIC
 LDFLAGS = -lpthread
 
 BUILD_DIR = build
@@ -15,11 +15,14 @@ endef
 
 OBJ = $(foreach src,$(SRC),$(call src2obj,$(src)))
 
-all: libclient.so
+all: libfsclient.so
+
+libfsclient.so: $(OBJ)
+	$(CC) -shared -o $@ $(OBJ) $(LDFLAGS)
 
 define make-obj-rule
 $(call src2obj,$(1)): $(1)
-	mkdir -p $(dir $$@)
+	mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $$< -o $$@
 endef
 

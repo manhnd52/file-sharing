@@ -1,13 +1,13 @@
 #include "handlers/folder_handler.h"
 #include "router.h"
 #include "cJSON.h"
-#include <sqlite3.h>
 #include "database.h"
 #include "services/file_service.h"
+#include "services/authorize_service.h"
+#include <sqlite3.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <arpa/inet.h>
 
 // Helper: get or create root folder for a user
 void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
@@ -38,6 +38,14 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"folder_is_not_exist\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    if (!authorize_folder_access(c->user_id, folder_id, PERM_READ)) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authorized\"}");
         send_data(c, resp);
         return;
     }
@@ -117,61 +125,45 @@ void handle_cmd_mkdir(Conn *c, Frame *f, const char *cmd) {
         return;
     }
 
+    // --- FIX: Copy name to local buffer to use safely after cJSON_Delete ---
+    char name_buf[256];
+    memset(name_buf, 0, sizeof(name_buf));
+    snprintf(name_buf, sizeof(name_buf), "%s", name_item->valuestring);
+    // -----------------------------------------------------------------------
+
     int parent_id = 0;
     if (cJSON_IsNumber(parent_item)) {
         parent_id = parent_item->valueint;
     }
 
-    // If parent_id == 0, use (or create) user's root folder as parent
-    if (parent_id == 0) {
-        parent_id = folder_get_or_create_user_root(c->user_id);
-    }
-
-    if (parent_id <= 0) {
+    if (parent_id > 0 && !authorize_folder_access(c->user_id, parent_id, PERM_WRITE)) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"parent_not_found\"}");
+                            "{\"error\":\"not_authorized\"}");
         send_data(c, resp);
         cJSON_Delete(root);
         return;
     }
 
-    // Insert new folder
-    sqlite3_stmt *stmt = NULL;
-    const char *sql_insert =
-        "INSERT INTO folders(name, parent_id, owner_id, user_root) "
-        "VALUES(?, ?, ?, 0)";
-    if (sqlite3_prepare_v2(db_global, sql_insert, -1, &stmt, NULL) != SQLITE_OK) {
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"db_error\"}");
-        send_data(c, resp);
-        cJSON_Delete(root);
-        return;
-    }
-
-    sqlite3_bind_text(stmt, 1, name_item->valuestring, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 2, parent_id);
-    sqlite3_bind_int(stmt, 3, c->user_id);
-
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+    int new_id = 0;
+    // Use name_buf instead of name_item->valuestring
+    int create_rc = folder_create(c->user_id, parent_id, name_buf, &new_id);
+    
+    // Now it's safe to delete root
     cJSON_Delete(root);
 
-    if (rc != SQLITE_DONE) {
+    if (create_rc != 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"db_error\"}");
         send_data(c, resp);
         return;
     }
-
-    int new_id = (int)sqlite3_last_insert_rowid(db_global);
 
     cJSON *resp_root = cJSON_CreateObject();
     cJSON_AddStringToObject(resp_root, "status", "ok");
     cJSON_AddNumberToObject(resp_root, "id", new_id);
-    cJSON_AddStringToObject(resp_root, "name", name_item->valuestring);
+    cJSON_AddStringToObject(resp_root, "name", name_buf); // Use local buffer
     cJSON_AddNumberToObject(resp_root, "parent_id", parent_id);
 
     char *json_resp = cJSON_PrintUnformatted(resp_root);
@@ -196,47 +188,14 @@ void handle_cmd_list_own_folders(Conn *c, Frame *f, const char *cmd) {
         return;
     }
 
-    int root_id = folder_get_or_create_user_root(c->user_id);
-    if (root_id <= 0) {
+    cJSON *root = list_owned_top_folders(c->user_id);
+    if (!root) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"db_error\"}");
         send_data(c, resp);
         return;
     }
-
-    // Only list direct children of root (top-level folders of the user)
-    const char *sql =
-        "SELECT id, name FROM folders "
-        "WHERE owner_id = ? AND user_root = 0 AND parent_id = ? "
-        "ORDER BY id";
-    sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"db_error\"}");
-        send_data(c, resp);
-        return;
-    }
-
-    sqlite3_bind_int(stmt, 1, c->user_id);
-    sqlite3_bind_int(stmt, 2, root_id);
-
-    cJSON *root = cJSON_CreateObject();
-    cJSON *items = cJSON_CreateArray();
-    cJSON_AddItemToObject(root, "folders", items);
-
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        int id = sqlite3_column_int(stmt, 0);
-        const unsigned char *name = sqlite3_column_text(stmt, 1);
-
-        cJSON *item = cJSON_CreateObject();
-        cJSON_AddNumberToObject(item, "id", id);
-        cJSON_AddStringToObject(item, "name", (const char *)name);
-        cJSON_AddItemToArray(items, item);
-    }
-
-    sqlite3_finalize(stmt);
 
     char *json_resp = cJSON_PrintUnformatted(root);
     Frame resp;
@@ -289,59 +248,167 @@ void handle_cmd_delete_folder(Conn *c, Frame *f, const char *cmd) {
     int folder_id = id_item->valueint;
     cJSON_Delete(root);
 
-    // Ensure folder belongs to user and is not root folder
+    PermissionLevel perm = get_folder_permission(c->user_id, folder_id);
+    if (perm == PERM_NONE) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authorized\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    if (perm == PERM_READ) {
+        // chỉ gỡ chia sẻ cho user hiện tại
+        revoke_permission(c->user_id, 1, folder_id);
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK,
+                            "{\"status\":\"unshared\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    // PERM_WRITE: nếu là owner thì xóa theo sở hữu, nếu không phải owner thì xóa thực sự (trừ root)
     sqlite3_stmt *stmt = NULL;
-    const char *sql_check =
-        "SELECT user_root FROM folders WHERE id = ? AND owner_id = ?";
-    if (sqlite3_prepare_v2(db_global, sql_check, -1, &stmt, NULL) != SQLITE_OK) {
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"db_error\"}");
-        send_data(c, resp);
-        return;
-    }
-    sqlite3_bind_int(stmt, 1, folder_id);
-    sqlite3_bind_int(stmt, 2, c->user_id);
-
-    int user_root = -1;
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        user_root = sqlite3_column_int(stmt, 0);
+    int owner_id = 0;
+    int user_root = 0;
+    const char *sql_meta = "SELECT owner_id, user_root FROM folders WHERE id = ?";
+    if (sqlite3_prepare_v2(db_global, sql_meta, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, folder_id);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            owner_id = sqlite3_column_int(stmt, 0);
+            user_root = sqlite3_column_int(stmt, 1);
+        }
     }
     sqlite3_finalize(stmt);
 
-    if (user_root < 0) {
+    if (owner_id == 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"folder_not_found_or_not_owner\"}");
-        send_data(c, resp);
-        return;
-    }
-    if (user_root == 1) {
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"cannot_delete_root_folder\"}");
+                            "{\"error\":\"folder_not_found\"}");
         send_data(c, resp);
         return;
     }
 
-    const char *sql_delete = "DELETE FROM folders WHERE id = ? AND owner_id = ?";
-    if (sqlite3_prepare_v2(db_global, sql_delete, -1, &stmt, NULL) != SQLITE_OK) {
+    if (owner_id == c->user_id) {
+        int del_rc = folder_delete_owned(c->user_id, folder_id);
+        if (del_rc == -2) {
+            Frame resp;
+            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                                "{\"error\":\"cannot_delete_root_folder\"}");
+            send_data(c, resp);
+            return;
+        }
+        if (del_rc != 0) {
+            Frame resp;
+            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                                "{\"error\":\"db_error\"}");
+            send_data(c, resp);
+            return;
+        }
+    } else {
+        if (user_root == 1) {
+            Frame resp;
+            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                                "{\"error\":\"cannot_delete_root_folder\"}");
+            send_data(c, resp);
+            return;
+        }
+        if (!delete_folder(folder_id)) {
+            Frame resp;
+            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                                "{\"error\":\"db_error\"}");
+            send_data(c, resp);
+            return;
+        }
+    }
+
+    Frame resp;
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK,
+                        "{\"status\":\"ok\"}");
+    send_data(c, resp);
+}
+
+// Delete file with permission handling
+void handle_cmd_delete_file(Conn *c, Frame *f, const char *cmd) {
+    (void)cmd;
+    printf("[CMD:DELETE_FILE][INFO] user_id=%d\n", c->user_id);
+
+    if (!db_global || c->user_id <= 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"db_error\"}");
+                            "{\"error\":\"not_authenticated\"}");
         send_data(c, resp);
         return;
     }
-    sqlite3_bind_int(stmt, 1, folder_id);
-    sqlite3_bind_int(stmt, 2, c->user_id);
 
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
+    if (f->payload_len == 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"db_error\"}");
+                            "{\"error\":\"missing_payload\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    cJSON *root = cJSON_Parse((char *)f->payload);
+    if (!root) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"invalid_json\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    cJSON *id_item = cJSON_GetObjectItemCaseSensitive(root, "file_id");
+    if (!cJSON_IsNumber(id_item)) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"missing_file_id\"}");
+        send_data(c, resp);
+        cJSON_Delete(root);
+        return;
+    }
+    int file_id = id_item->valueint;
+    cJSON_Delete(root);
+
+    PermissionLevel perm = get_file_permission(c->user_id, file_id);
+    if (perm == PERM_NONE) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authorized\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    if (perm == PERM_READ) {
+        revoke_permission(c->user_id, 0, file_id);
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK,
+                            "{\"status\":\"unshared\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    int owner_id = file_get_owner(file_id);
+    if (owner_id == 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"file_not_found\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    if (owner_id == c->user_id || perm == PERM_WRITE) {
+        if (!delete_file(file_id)) {
+            Frame resp;
+            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                                "{\"error\":\"db_error\"}");
+            send_data(c, resp);
+            return;
+        }
+    } else {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authorized\"}");
         send_data(c, resp);
         return;
     }
@@ -397,81 +464,240 @@ void handle_cmd_share_folder(Conn *c, Frame *f, const char *cmd) {
     }
 
     int folder_id = id_item->valueint;
-    const char *username = user_item->valuestring;
+    // FIX: Copy string to buffer safely
+    char username_buf[128];
+    memset(username_buf, 0, sizeof(username_buf));
+    snprintf(username_buf, sizeof(username_buf), "%s", user_item->valuestring ? user_item->valuestring : "");
     int permission = perm_item->valueint;
+    
+    // Call logic
+    int share_rc = folder_share_with_user(c->user_id, folder_id, username_buf, permission);
+    
+    // Cleanup
     cJSON_Delete(root);
 
-    // Ensure current user owns the folder
-    sqlite3_stmt *stmt = NULL;
-    const char *sql_check =
-        "SELECT id FROM folders WHERE id = ? AND owner_id = ?";
-    if (sqlite3_prepare_v2(db_global, sql_check, -1, &stmt, NULL) != SQLITE_OK) {
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"db_error\"}");
-        send_data(c, resp);
-        return;
-    }
-    sqlite3_bind_int(stmt, 1, folder_id);
-    sqlite3_bind_int(stmt, 2, c->user_id);
-
-    int exists = (sqlite3_step(stmt) == SQLITE_ROW);
-    sqlite3_finalize(stmt);
-
-    if (!exists) {
+    if (share_rc == -1) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"folder_not_found_or_not_owner\"}");
         send_data(c, resp);
         return;
     }
-
-    // Lookup target user id
-    const char *sql_user =
-        "SELECT id FROM users WHERE username = ?";
-    if (sqlite3_prepare_v2(db_global, sql_user, -1, &stmt, NULL) != SQLITE_OK) {
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"db_error\"}");
-        send_data(c, resp);
-        return;
-    }
-    sqlite3_bind_text(stmt, 1, username, -1, SQLITE_STATIC);
-
-    int target_user_id = 0;
-    if (sqlite3_step(stmt) == SQLITE_ROW) {
-        target_user_id = sqlite3_column_int(stmt, 0);
-    }
-    sqlite3_finalize(stmt);
-
-    if (target_user_id <= 0) {
+    if (share_rc == -2) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"user_not_found\"}");
         send_data(c, resp);
         return;
     }
-
-    const char *sql_upsert =
-        "INSERT INTO permissions(target_type, target_id, user_id, permission) "
-        "VALUES(1, ?, ?, ?) "
-        "ON CONFLICT(target_type, target_id, user_id) "
-        "DO UPDATE SET permission=excluded.permission";
-    if (sqlite3_prepare_v2(db_global, sql_upsert, -1, &stmt, NULL) != SQLITE_OK) {
+    if (share_rc != 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"db_error\"}");
         send_data(c, resp);
         return;
     }
-    sqlite3_bind_int(stmt, 1, folder_id);
-    sqlite3_bind_int(stmt, 2, target_user_id);
-    sqlite3_bind_int(stmt, 3, permission);
 
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
+    Frame resp;
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK,
+                        "{\"status\":\"ok\"}");
+    send_data(c, resp);
+}
 
-    if (rc != SQLITE_DONE) {
+// Share file with another user
+void handle_cmd_share_file(Conn *c, Frame *f, const char *cmd) {
+    (void)cmd;
+    printf("[CMD:SHARE_FILE][INFO] user_id=%d\n", c->user_id);
+
+    if (!db_global || c->user_id <= 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authenticated\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    if (f->payload_len == 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"missing_payload\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    cJSON *root = cJSON_Parse((char *)f->payload);
+    if (!root) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"invalid_json\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    cJSON *id_item = cJSON_GetObjectItemCaseSensitive(root, "file_id");
+    cJSON *user_item = cJSON_GetObjectItemCaseSensitive(root, "username");
+    cJSON *perm_item = cJSON_GetObjectItemCaseSensitive(root, "permission");
+
+    if (!cJSON_IsNumber(id_item) || !cJSON_IsString(user_item) ||
+        !cJSON_IsNumber(perm_item)) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"missing_fields\"}");
+        send_data(c, resp);
+        cJSON_Delete(root);
+        return;
+    }
+
+    int file_id = id_item->valueint;
+    // FIX: Copy string to buffer safely
+    char username_buf[128];
+    memset(username_buf, 0, sizeof(username_buf));
+    snprintf(username_buf, sizeof(username_buf), "%s", user_item->valuestring ? user_item->valuestring : "");
+    int permission = perm_item->valueint;
+    
+    // Call logic
+    int share_rc = file_share_with_user(c->user_id, file_id, username_buf, permission);
+    
+    // Cleanup
+    cJSON_Delete(root);
+
+    if (share_rc == -1) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"file_not_found_or_not_owner\"}");
+        send_data(c, resp);
+        return;
+    }
+    if (share_rc == -2) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"user_not_found\"}");
+        send_data(c, resp);
+        return;
+    }
+    if (share_rc != 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"db_error\"}");
+        send_data(c, resp);
+        return;
+    }
+
+    Frame resp;
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK,
+                        "{\"status\":\"ok\"}");
+    send_data(c, resp);
+}
+
+// List permissions for target (folder/file)
+void handle_cmd_list_permissions(Conn *c, Frame *f, const char *cmd) {
+    (void)cmd;
+    if (!db_global || c->user_id <= 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authenticated\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *root = cJSON_Parse((char *)f->payload);
+    if (!root) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"invalid_json\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *type_item = cJSON_GetObjectItemCaseSensitive(root, "target_type");
+    cJSON *id_item = cJSON_GetObjectItemCaseSensitive(root, "target_id");
+    if (!cJSON_IsNumber(type_item) || !cJSON_IsNumber(id_item)) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"missing_fields\"}");
+        send_data(c, resp);
+        cJSON_Delete(root);
+        return;
+    }
+    int target_type = type_item->valueint;
+    int target_id = id_item->valueint;
+    cJSON_Delete(root);
+
+    cJSON *perms = list_permissions(target_type, target_id);
+    if (!perms) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"db_error\"}");
+        send_data(c, resp);
+        return;
+    }
+    char *json_resp = cJSON_PrintUnformatted(perms);
+    cJSON_Delete(perms);
+    Frame resp;
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
+    send_data(c, resp);
+    free(json_resp);
+}
+
+// Update permission for a target
+void handle_cmd_update_permission(Conn *c, Frame *f, const char *cmd) {
+    (void)cmd;
+    if (!db_global || c->user_id <= 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authenticated\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *root = cJSON_Parse((char *)f->payload);
+    if (!root) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"invalid_json\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *type_item = cJSON_GetObjectItemCaseSensitive(root, "target_type");
+    cJSON *id_item = cJSON_GetObjectItemCaseSensitive(root, "target_id");
+    cJSON *user_item = cJSON_GetObjectItemCaseSensitive(root, "username");
+    cJSON *perm_item = cJSON_GetObjectItemCaseSensitive(root, "permission");
+    if (!cJSON_IsNumber(type_item) || !cJSON_IsNumber(id_item) || !cJSON_IsString(user_item) || !cJSON_IsNumber(perm_item)) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"missing_fields\"}");
+        send_data(c, resp);
+        cJSON_Delete(root);
+        return;
+    }
+    int target_type = type_item->valueint;
+    int target_id = id_item->valueint;
+    
+    // --- FIX: Copy username ra buffer trước khi xóa root ---
+    char username_buf[128];
+    memset(username_buf, 0, sizeof(username_buf));
+    snprintf(username_buf, sizeof(username_buf), "%s", user_item->valuestring ? user_item->valuestring : "");
+    // -----------------------------------------------------
+
+    int perm = perm_item->valueint;
+    
+    // Bây giờ xóa root an toàn
+    cJSON_Delete(root);
+
+    int rc = update_permission(c->user_id, target_type, target_id, username_buf, perm);
+    
+    if (rc == -1) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_owner_or_not_found\"}");
+        send_data(c, resp);
+        return;
+    }
+    if (rc == -2) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"user_not_found_or_invalid\"}");
+        send_data(c, resp);
+        return;
+    }
+    if (rc != 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"db_error\"}");
@@ -530,77 +756,43 @@ void handle_cmd_rename_item(Conn *c, Frame *f, const char *cmd) {
     }
 
     int item_id = id_item->valueint;
-    const char *type = type_item->valuestring;
-    const char *new_name = name_item->valuestring;
+    
+    // Normalize type
+    char type_buf[16];
+    memset(type_buf, 0, sizeof(type_buf));
+    snprintf(type_buf, sizeof(type_buf), "%s", type_item->valuestring ? type_item->valuestring : "");
+    for (size_t i = 0; i < strlen(type_buf); ++i) {
+        if (type_buf[i] >= 'A' && type_buf[i] <= 'Z') {
+            type_buf[i] = (char)(type_buf[i] - 'A' + 'a');
+        }
+    }
+    
+    // Copy new name
+    char new_name_buf[256];
+    memset(new_name_buf, 0, sizeof(new_name_buf));
+    snprintf(new_name_buf, sizeof(new_name_buf), "%s", name_item->valuestring ? name_item->valuestring : "");
+
+    // --- FIX: Use data logic before deleting, or delete after usage ---
+    // Since we copied everything to buffers (type_buf, new_name_buf), we can delete now.
     cJSON_Delete(root);
+    
+    int rc = item_rename(c->user_id, item_id, type_buf, new_name_buf);
 
-    const char *sql_update = NULL;
-
-    if (strcmp(type, "folder") == 0) {
-        // Cannot rename root folder
-        sqlite3_stmt *stmt = NULL;
-        const char *sql_check =
-            "SELECT user_root FROM folders WHERE id = ? AND owner_id = ?";
-        if (sqlite3_prepare_v2(db_global, sql_check, -1, &stmt, NULL) != SQLITE_OK) {
-            Frame resp;
-            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                                "{\"error\":\"db_error\"}");
-            send_data(c, resp);
-            return;
-        }
-        sqlite3_bind_int(stmt, 1, item_id);
-        sqlite3_bind_int(stmt, 2, c->user_id);
-
-        int user_root = -1;
-        if (sqlite3_step(stmt) == SQLITE_ROW) {
-            user_root = sqlite3_column_int(stmt, 0);
-        }
-        sqlite3_finalize(stmt);
-
-        if (user_root < 0) {
-            Frame resp;
-            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                                "{\"error\":\"folder_not_found_or_not_owner\"}");
-            send_data(c, resp);
-            return;
-        }
-        if (user_root == 1) {
-            Frame resp;
-            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                                "{\"error\":\"cannot_rename_root_folder\"}");
-            send_data(c, resp);
-            return;
-        }
-
-        sql_update =
-            "UPDATE folders SET name = ? WHERE id = ? AND owner_id = ?";
-    } else if (strcmp(type, "file") == 0) {
-        sql_update =
-            "UPDATE files SET name = ? WHERE id = ? AND owner_id = ?";
-    } else {
+    if (rc == -1) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"invalid_item_type\"}");
+                            "{\"error\":\"item_not_found_or_not_owner\"}");
         send_data(c, resp);
         return;
     }
-
-    sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(db_global, sql_update, -1, &stmt, NULL) != SQLITE_OK) {
+    if (rc == -2) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"db_error\"}");
+                            "{\"error\":\"invalid_item_type_or_forbidden\"}");
         send_data(c, resp);
         return;
     }
-    sqlite3_bind_text(stmt, 1, new_name, -1, SQLITE_STATIC);
-    sqlite3_bind_int(stmt, 2, item_id);
-    sqlite3_bind_int(stmt, 3, c->user_id);
-
-    int rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
+    if (rc != 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"db_error\"}");
@@ -627,43 +819,14 @@ void handle_cmd_list_shared_folders(Conn *c, Frame *f, const char *cmd) {
         return;
     }
 
-    const char *sql =
-        "SELECT f.id, f.name, f.owner_id, p.permission "
-        "FROM permissions p "
-        "JOIN folders f ON p.target_type = 1 AND p.target_id = f.id "
-        "WHERE p.user_id = ? "
-        "ORDER BY f.id";
-
-    sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) != SQLITE_OK) {
+    cJSON *root = list_shared_folders(c->user_id);
+    if (!root) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"db_error\"}");
         send_data(c, resp);
         return;
     }
-
-    sqlite3_bind_int(stmt, 1, c->user_id);
-
-    cJSON *root = cJSON_CreateObject();
-    cJSON *items = cJSON_CreateArray();
-    cJSON_AddItemToObject(root, "folders", items);
-
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        int id = sqlite3_column_int(stmt, 0);
-        const unsigned char *name = sqlite3_column_text(stmt, 1);
-        int owner_id = sqlite3_column_int(stmt, 2);
-        int perm = sqlite3_column_int(stmt, 3);
-
-        cJSON *item = cJSON_CreateObject();
-        cJSON_AddNumberToObject(item, "id", id);
-        cJSON_AddStringToObject(item, "name", (const char *)name);
-        cJSON_AddNumberToObject(item, "owner_id", owner_id);
-        cJSON_AddNumberToObject(item, "permission", perm);
-        cJSON_AddItemToArray(items, item);
-    }
-
-    sqlite3_finalize(stmt);
 
     char *json_resp = cJSON_PrintUnformatted(root);
     Frame resp;
