@@ -15,8 +15,7 @@ endef
 
 OBJ = $(foreach src,$(SRC),$(call src2obj,$(src)))
 
-client: $(OBJ)
-	$(CC) $(OBJ) -o client $(LDFLAGS)
+all: libclient.so
 
 define make-obj-rule
 $(call src2obj,$(1)): $(1)
