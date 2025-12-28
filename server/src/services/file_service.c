@@ -185,7 +185,26 @@ int folder_save_metadata(int owner_id, int parent_folder_id, const char* new_fol
     return folder_id;
 }
 
-// Get folder info including: folder meta data, items (folders, files)
+/**
+ * get_folder_info - Lấy thông tin chi tiết của một folder
+ *
+ * @param folder_id: ID của folder cần truy vấn (phải > 0)
+ *
+ * @return con trỏ `cJSON*` chứa object với cấu trúc:
+ ```json
+ {
+    "folder_id": int,
+    "parent_id": int,
+    "folder_name": string,
+    "owner_id": int,
+    "user_root": bool,
+    "items": [ { "id": int, "name": string, "type": "folder" }, 
+               { "id": int, "name": string, "type": "file", "size": int64 } ... ]
+  }
+ ```
+ * Hoặc `cJSON` null nếu folder không tồn tại hoặc input không hợp lệ.
+ *
+ */
 cJSON* get_folder_info(int folder_id) {
     if (!db_global || folder_id <= 0) {
         return cJSON_CreateNull();

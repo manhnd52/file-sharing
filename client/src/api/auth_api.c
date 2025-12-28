@@ -74,3 +74,8 @@ int logout_api(Connect *conn, Frame *resp) {
     cJSON_Delete(json);
     return rc;
 }
+
+int me_api(Frame *resp) {
+    return send_simple_cmd("GET_ME", resp);
+}
+

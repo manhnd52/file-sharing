@@ -1,4 +1,3 @@
-#include "api/test.h"
 #include "client.h"
 #include "test.h"
 #include "utils/config_util.h"
@@ -30,6 +29,5 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    return run_cli_command(argv[0], argc - 1, argv + 1, cfg.server,
-                           (uint16_t)cfg.port);
+    return 0;
 }

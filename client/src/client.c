@@ -1,6 +1,6 @@
 #include "client.h"
 #include "cJSON.h"
-
+#include <stdio.h>
 #include <stdlib.h>
 
 Connect *g_conn = NULL;
@@ -14,6 +14,7 @@ int client_connect(const char *host, uint16_t port, int timeout_seconds) {
         return -1;
     }
     g_conn = conn;
+    printf("[CLIENT] Connected to server: %s:%d", host, port);
     return 0;
 }
 
@@ -46,5 +47,21 @@ int send_cmd(cJSON *json, Frame *res) {
     }
 
     free(payload);
+    return rc;
+}
+
+int send_simple_cmd(const char *cmd, Frame *resp) {
+    if (!cmd || !resp) {
+        return -1;
+    }
+
+    cJSON *json = cJSON_CreateObject();
+    if (!json) {
+        return -1;
+    }
+
+    cJSON_AddStringToObject(json, "cmd", cmd);
+    int rc = send_cmd(json, resp);
+    cJSON_Delete(json);
     return rc;
 }

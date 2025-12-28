@@ -8,5 +8,6 @@ int login_api(const char *username, const char *password, Frame *res);
 int register_api(const char *username, const char *password, Frame *res);
 int auth_api(const char *token, Frame *res);
 int logout_api(Connect *conn, Frame *res);
+int me_api(Frame *resp);
 
 #endif

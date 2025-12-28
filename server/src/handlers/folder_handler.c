@@ -1,8 +1,9 @@
-#include "handlers/cmd_handler.h"
+#include "handlers/folder_handler.h"
 #include "router.h"
 #include "cJSON.h"
 #include <sqlite3.h>
 #include "database.h"
+#include "services/file_service.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,44 +34,17 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
         }
     }
 
-    sqlite3_stmt *stmt = NULL;
-    int current_folder_id = folder_id;
-    int parent_id = 0;
-    char folder_name[256] = {0};
-
-    // Resolve root folder for user if folder_id == 0
-    if (current_folder_id == 0) {
-        current_folder_id = folder_get_or_create_user_root(c->user_id);
-        if (current_folder_id <= 0) {
-            Frame resp;
-            build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                                "{\"error\":\"db_error\"}");
-            send_data(c, resp);
-            return;
-        }
-        strncpy(folder_name, "root", sizeof(folder_name) - 1);
+    if (folder_id <= 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"folder_is_not_exist\"}");
+        send_data(c, resp);
+        return;
     }
 
-    // Load folder info (name, parent_id)
-    if (current_folder_id > 0 && folder_name[0] == '\0') {
-        const char *sql_info =
-            "SELECT name, parent_id FROM folders WHERE id = ?";
-        if (sqlite3_prepare_v2(db_global, sql_info, -1, &stmt, NULL) == SQLITE_OK) {
-            sqlite3_bind_int(stmt, 1, current_folder_id);
-            if (sqlite3_step(stmt) == SQLITE_ROW) {
-                const unsigned char *name = sqlite3_column_text(stmt, 0);
-                if (name) {
-                    strncpy(folder_name, (const char *)name, sizeof(folder_name) - 1);
-                }
-                parent_id = sqlite3_column_type(stmt, 1) != SQLITE_NULL
-                                ? sqlite3_column_int(stmt, 1)
-                                : 0;
-            }
-        }
-        sqlite3_finalize(stmt);
-    }
-
-    if (current_folder_id <= 0) {
+    cJSON *folder_info = get_folder_info(folder_id);
+    if (!folder_info || cJSON_IsNull(folder_info)) {
+        cJSON_Delete(folder_info);
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"folder_not_found\"}");
@@ -78,67 +52,26 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
         return;
     }
 
-    // Build JSON response
-    cJSON *response = cJSON_CreateObject();
-    cJSON_AddStringToObject(response, "status", "ok");
-    cJSON_AddNumberToObject(response, "folder_id", current_folder_id);
-    cJSON_AddNumberToObject(response, "parent_id", parent_id);
-    cJSON_AddStringToObject(response, "folder_name",
-                            folder_name[0] ? folder_name : "/");
+    cJSON_AddStringToObject(folder_info, "status", "ok");
+    char *json_resp = cJSON_PrintUnformatted(folder_info);
+    cJSON_Delete(folder_info);
 
-    cJSON *items = cJSON_CreateArray();
-    cJSON_AddItemToObject(response, "items", items);
-
-    // List child folders
-    const char *sql_sub =
-        "SELECT id, name FROM folders WHERE parent_id = ? ORDER BY name";
-    if (sqlite3_prepare_v2(db_global, sql_sub, -1, &stmt, NULL) == SQLITE_OK) {
-        sqlite3_bind_int(stmt, 1, current_folder_id);
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            int id = sqlite3_column_int(stmt, 0);
-            const unsigned char *name = sqlite3_column_text(stmt, 1);
-
-            cJSON *item = cJSON_CreateObject();
-            cJSON_AddNumberToObject(item, "id", id);
-            cJSON_AddStringToObject(item, "name",
-                                    name ? (const char *)name : "");
-            cJSON_AddStringToObject(item, "type", "folder");
-            cJSON_AddItemToArray(items, item);
-        }
+    if (!json_resp) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"server_error\"}");
+        send_data(c, resp);
+        return;
     }
-    sqlite3_finalize(stmt);
 
-    // List files in folder
-    const char *sql_files =
-        "SELECT id, name, size FROM files WHERE folder_id = ? ORDER BY name";
-    if (sqlite3_prepare_v2(db_global, sql_files, -1, &stmt, NULL) == SQLITE_OK) {
-        sqlite3_bind_int(stmt, 1, current_folder_id);
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            int id = sqlite3_column_int(stmt, 0);
-            const unsigned char *name = sqlite3_column_text(stmt, 1);
-            sqlite3_int64 size = sqlite3_column_int64(stmt, 2);
-
-            cJSON *item = cJSON_CreateObject();
-            cJSON_AddNumberToObject(item, "id", id);
-            cJSON_AddStringToObject(item, "name",
-                                    name ? (const char *)name : "");
-            cJSON_AddStringToObject(item, "type", "file");
-            cJSON_AddNumberToObject(item, "size", (double)size);
-            cJSON_AddItemToArray(items, item);
-        }
-    }
-    sqlite3_finalize(stmt);
-
-    char *json_resp = cJSON_PrintUnformatted(response);
     Frame resp;
     build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
     send_data(c, resp);
 
     printf("[CMD:LIST][SUCCESS] Sent list for folder_id=%d (fd=%d, user_id=%d, request_id=%d)\n",
-           current_folder_id, c->sockfd, c->user_id, f->header.cmd.request_id);
+           folder_id, c->sockfd, c->user_id, f->header.cmd.request_id);
 
     free(json_resp);
-    cJSON_Delete(response);
 }
 
 // Handler for MKDIR command

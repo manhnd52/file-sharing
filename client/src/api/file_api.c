@@ -1,52 +1,32 @@
 #include "api/file_api.h"
 
-#include "../../protocol/connect.h"
-#include "../../protocol/frame.h"
+#include "client.h"
 #include "cJSON.h"
 
-#include <stdlib.h>
-
-static int build_and_send(const char *cmd, Connect *conn, cJSON *json, Frame *resp) {
-    if (!cmd || !conn || !resp) {
-        return -1;
-    }
-    if (!json) {
-        json = cJSON_CreateObject();
-        if (!json) {
-            return -1;
-        }
-    }
-    cJSON_AddStringToObject(json, "cmd", cmd);
-    char *payload = cJSON_PrintUnformatted(json);
-    if (!payload) {
-        cJSON_Delete(json);
+static int send_list_request(int folder_id, Frame *resp) {
+    if (!resp) {
         return -1;
     }
 
-    Frame request = {0};
-    int rc = -1;
-    if (build_cmd_frame(&request, 0, payload) == 0) {
-        rc = connect_send_request(conn, &request, resp);
-    }
-
-    free(payload);
-    cJSON_Delete(json);
-    return rc;
-}
-
-int file_api_list(Connect *conn, const char *path, Frame *resp) {
     cJSON *json = cJSON_CreateObject();
     if (!json) {
         return -1;
     }
-    cJSON_AddStringToObject(json, "path", path && path[0] ? path : "/");
-    return build_and_send("LIST", conn, json, resp);
+
+    cJSON_AddStringToObject(json, "cmd", "LIST");
+    if (folder_id > 0) {
+        cJSON_AddNumberToObject(json, "folder_id", folder_id);
+    }
+
+    int rc = send_cmd(json, resp);
+    cJSON_Delete(json);
+    return rc;
 }
 
-int file_api_me(Connect *conn, Frame *resp) {
-    return build_and_send("GET_ME", conn, NULL, resp);
+int list_api(int folder_id, Frame *resp) {
+    return send_list_request(folder_id, resp);
 }
 
-int file_api_ping(Connect *conn, Frame *resp) {
-    return build_and_send("PING", conn, NULL, resp);
+int ping_api(Frame *resp) {
+    return send_simple_cmd("PING", resp);
 }
