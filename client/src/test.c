@@ -1,7 +1,9 @@
 #include "test.h"
 
 #include "api/auth_api.h"
+#include "api/download_api.h"
 #include "api/file_api.h"
+#include "api/upload_api.h"
 #include "client.h"
 #include "cJSON.h"
 #include "frame.h"
@@ -232,6 +234,71 @@ static void handle_list(void) {
     print_response(&resp);
 }
 
+static void handle_upload(void) {
+    char file_path[512] = {0};
+    char parent_input[64] = {0};
+    char cwd[256];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("Current working directory: %s\n", cwd);
+    }
+
+    puts("Upload file:");
+    read_line("  file path", file_path, sizeof(file_path));
+    if (file_path[0] == '\0') {
+        puts("  file path required");
+        return;
+    }
+
+    int parent_folder_id = 0;
+    if (saved_root_folder_id > 0) {
+        printf("  parent_folder_id default=%d (press Enter to reuse)\n", saved_root_folder_id);
+    }
+    read_line("  parent_folder_id", parent_input, sizeof(parent_input));
+    if (parent_input[0] == '\0' && saved_root_folder_id > 0) {
+        parent_folder_id = saved_root_folder_id;
+    } else {
+        parent_folder_id = (int)strtol(parent_input, NULL, 10);
+    }
+
+    if (parent_folder_id <= 0) {
+        puts("  invalid parent_folder_id");
+        return;
+    }
+
+    Frame resp = {0};
+    int rc = upload_file_api(file_path, parent_folder_id, &resp);
+    if (rc != 0) {
+        fprintf(stderr, "upload_file_api failed (%d)\n", rc);
+        return;
+    }
+    print_response(&resp);
+}
+
+static void handle_download(void) {
+    char storage_path[512] = {0};
+    char file_input[64] = {0};
+    puts("Download file:");
+    read_line("  file_id", file_input, sizeof(file_input));
+    int file_id = (int)strtol(file_input, NULL, 10);
+    if (file_id <= 0) {
+        puts("  invalid file_id");
+        return;
+    }
+    read_line("  output path", storage_path, sizeof(storage_path));
+    if (storage_path[0] == '\0') {
+        puts("  output path required");
+        return;
+    }
+
+    Frame resp = {0};
+    int rc = download_file_api(storage_path, file_id, &resp);
+    if (rc != 0) {
+        fprintf(stderr, "download_file_api failed (%d)\n", rc);
+        return;
+    }
+    print_response(&resp);
+}
+
 static void show_menu(void) {
     puts("\n=== Client API Tester ===");
     puts(" 1) Register");
@@ -241,6 +308,8 @@ static void show_menu(void) {
     puts(" 5) GET_ME");
     puts(" 6) PING");
     puts(" 7) LIST folder");
+    puts(" 8) Upload file");
+    puts(" 9) Download file");
     puts(" 0) Exit");
     printf("Choose an option: ");
     fflush(stdout);
@@ -293,6 +362,12 @@ int run_client_tests(void) {
                 break;
             case '7':
                 handle_list();
+                break;
+            case '8':
+                handle_upload();
+                break;
+            case '9':
+                handle_download();
                 break;
             case '0':
                 running = false;

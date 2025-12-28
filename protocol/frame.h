@@ -82,4 +82,6 @@ int parse_frame(uint8_t *buf, size_t len, Frame *f);
 int send_frame(int sockfd, Frame *f);
 int recv_frame(int sockfd, Frame *f);
 
+// --- Utils ---
+int print_frame(Frame *f);
 #endif

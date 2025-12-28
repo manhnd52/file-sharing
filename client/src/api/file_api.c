@@ -3,6 +3,11 @@
 #include "client.h"
 #include "cJSON.h"
 
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 static int send_list_request(int folder_id, Frame *resp) {
     if (!resp) {
         return -1;
@@ -23,6 +28,7 @@ static int send_list_request(int folder_id, Frame *resp) {
     return rc;
 }
 
+// LIST: get folder info and its item
 int list_api(int folder_id, Frame *resp) {
     return send_list_request(folder_id, resp);
 }
@@ -30,3 +36,4 @@ int list_api(int folder_id, Frame *resp) {
 int ping_api(Frame *resp) {
     return send_simple_cmd("PING", resp);
 }
+

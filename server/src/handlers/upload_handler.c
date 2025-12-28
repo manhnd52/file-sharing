@@ -74,7 +74,7 @@ void upload_handler(Conn *c, Frame *data) {
 	}
 
 	// Update session metadata
-	if (chunk_index == us->last_received_chunk + 1 && us->chunk_length == chunk_length) {
+	if (chunk_index == us->last_received_chunk + 1 && us->chunk_length > chunk_length) {
 		us->last_received_chunk = chunk_index;
 	} else {
 		Frame err_frame;

@@ -47,6 +47,8 @@ int send_cmd(cJSON *json, Frame *res) {
     }
 
     free(payload);
+
+    printf("[%d]: ", res->msg_type);
     return rc;
 }
 
