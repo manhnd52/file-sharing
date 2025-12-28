@@ -15,7 +15,8 @@ endef
 
 OBJ = $(foreach src,$(SRC),$(call src2obj,$(src)))
 
-all: libclient.so
+client: $(OBJ)
+	$(CC) $(OBJ) -o client $(LDFLAGS)
 
 define make-obj-rule
 $(call src2obj,$(1)): $(1)
@@ -27,9 +28,6 @@ $(foreach src,$(SRC),$(eval $(call make-obj-rule,$(src))))
 
 clean:
 	rm -f $(OBJ) client
-
-run: client
-	./client 127.0.0.1 5555
 
 run_test: client
 	./client --test
