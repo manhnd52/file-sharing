@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "router.h"
 #include "server.h"
-#include "handlers/cmd_handler.h"
+#include "handlers/folder_handler.h"
 #include "handlers/upload_handler.h"
 #include "handlers/auth_handler.h"
 #include "handlers/ping_handler.h"
