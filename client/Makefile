@@ -2,27 +2,37 @@ CC = gcc
 CFLAGS = -I../protocol -Iinclude -Wall
 LDFLAGS = -lpthread
 
-SRC = src/client.c src/api/auth_api.c src/api/file_api.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c
-SRC_TEST = client_test.c ../protocol/frame.c ../protocol/connect.c ../protocol/cJSON.c
-OBJ = $(patsubst %.c, %.o, $(SRC))
-OBJ_TEST = $(patsubst %.c, %.o, $(SRC_TEST))
+BUILD_DIR = build
+
+CLIENT_SRC = $(wildcard src/*.c) $(wildcard src/api/*.c) $(wildcard src/utils/*.c)
+
+PROTO_SRC = $(wildcard ../protocol/*.c)
+SRC = $(sort $(CLIENT_SRC) $(PROTO_SRC))
+
+define src2obj
+$(BUILD_DIR)/$(subst /,_,$(subst ../,,$(patsubst %.c,%.o,$(1))))
+endef
+
+OBJ = $(foreach src,$(SRC),$(call src2obj,$(src)))
 
 client: $(OBJ)
 	$(CC) $(OBJ) -o client $(LDFLAGS)
 
-client_test: $(OBJ_TEST)
-	$(CC) $(OBJ_TEST) -o client_test $(LDFLAGS) -lm
+define make-obj-rule
+$(call src2obj,$(1)): $(1)
+	mkdir -p $(dir $$@)
+	$(CC) $(CFLAGS) -c $$< -o $$@
+endef
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+$(foreach src,$(SRC),$(eval $(call make-obj-rule,$(src))))
 
 clean:
-	rm -f $(OBJ) $(OBJ_TEST) client client_test
+	rm -f $(OBJ) client
 
 run: client
 	./client 127.0.0.1 5555
 
-run_test: client_test
-	./client_test 127.0.0.1 5555
+run_test: client
+	./client --test
 
 .PHONY: clean run run_test
