@@ -61,6 +61,8 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
     }
 
     cJSON_AddStringToObject(folder_info, "status", "ok");
+    PermissionLevel perm = get_folder_permission(c->user_id, folder_id);
+    cJSON_AddNumberToObject(folder_info, "permission", perm);
     char *json_resp = cJSON_PrintUnformatted(folder_info);
     cJSON_Delete(folder_info);
 
@@ -249,20 +251,10 @@ void handle_cmd_delete_folder(Conn *c, Frame *f, const char *cmd) {
     cJSON_Delete(root);
 
     PermissionLevel perm = get_folder_permission(c->user_id, folder_id);
-    if (perm == PERM_NONE) {
+    if (perm < PERM_WRITE) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"not_authorized\"}");
-        send_data(c, resp);
-        return;
-    }
-
-    if (perm == PERM_READ) {
-        // chỉ gỡ chia sẻ cho user hiện tại
-        revoke_permission(c->user_id, 1, folder_id);
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK,
-                            "{\"status\":\"unshared\"}");
         send_data(c, resp);
         return;
     }
@@ -371,19 +363,10 @@ void handle_cmd_delete_file(Conn *c, Frame *f, const char *cmd) {
     cJSON_Delete(root);
 
     PermissionLevel perm = get_file_permission(c->user_id, file_id);
-    if (perm == PERM_NONE) {
+    if (perm < PERM_WRITE) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
                             "{\"error\":\"not_authorized\"}");
-        send_data(c, resp);
-        return;
-    }
-
-    if (perm == PERM_READ) {
-        revoke_permission(c->user_id, 0, file_id);
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK,
-                            "{\"status\":\"unshared\"}");
         send_data(c, resp);
         return;
     }

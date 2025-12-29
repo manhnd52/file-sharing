@@ -26,7 +26,7 @@ void purge_permissions_for_folder_subtree(int folder_id);
 cJSON* get_folder_info(int folder_id);
 cJSON* get_file_info(int file_id);
 cJSON* list_owned_top_folders(int owner_id);
-cJSON* list_shared_folders(int user_id);
+cJSON* list_shared_folders(int user_id); // trả về cả folders và files được share trực tiếp
 
 int delete_folder(int folder_id);
 int delete_file(int file_id);

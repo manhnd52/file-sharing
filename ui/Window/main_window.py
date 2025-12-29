@@ -127,9 +127,9 @@ class MainWindow(QMainWindow):
 
     def show_context_menu(self, row):
         data = self.table.item(row, 0).data(Qt.UserRole)
-        is_shared = data.get("is_shared", False)
         perm = data.get("permission", 2)
-        can_write = (not is_shared) or perm >= 2
+        can_write = perm >= 2
+        can_share = perm >= 2
 
         menu = QMenu(self)
         download = QAction("Tải xuống", self)
@@ -141,7 +141,7 @@ class MainWindow(QMainWindow):
         rename.setEnabled(can_write)
         rename.triggered.connect(lambda: self.request_rename.emit(data))
         menu.addAction(rename)
-        share.setEnabled(not is_shared)
+        share.setEnabled(can_share)
         share.triggered.connect(lambda: self.request_share.emit(data))
         menu.addAction(share)
 

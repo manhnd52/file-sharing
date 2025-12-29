@@ -48,6 +48,7 @@ class MainBinder:
         except json.JSONDecodeError:
             return []
 
+        folder_perm = payload.get("permission", 2)
         base_owner = payload.get("owner_name") or self.username or str(payload.get("owner_id", ""))
 
         items = payload.get("items", [])
@@ -79,6 +80,8 @@ class MainBinder:
             is_folder = item.get("type") == "folder"
             owner_val = item.get("owner") or item.get("owner_name") or base_owner
             owner_display = owner_val if item.get("is_shared") else base_owner
+            perm_val = item.get("permission", folder_perm)
+            is_shared = item.get("is_shared", folder_perm < 2)
             data.append({
                 "id": item.get("id"),
                 "name": item.get("name", ""),
@@ -87,8 +90,8 @@ class MainBinder:
                 "size": "-" if is_folder else self._format_size(item.get("size")),
                 "is_folder": is_folder,
                 "icon": icon_folder if is_folder else icon_file,
-                "is_shared": item.get("is_shared", False),
-                "permission": item.get("permission", 2),
+                "is_shared": is_shared,
+                "permission": perm_val,
             })
         return data
 

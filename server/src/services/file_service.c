@@ -693,7 +693,14 @@ cJSON* list_owned_top_folders(int owner_id) {
 cJSON* list_shared_folders(int user_id) {
     if (!db_global || user_id <= 0) return NULL;
 
-    const char *sql =
+    cJSON *root = cJSON_CreateObject();
+    cJSON *items = cJSON_CreateArray();
+    cJSON *folders_only = cJSON_CreateArray();
+    cJSON_AddItemToObject(root, "items", items);
+    cJSON_AddItemToObject(root, "folders", folders_only); // giữ tương thích cũ
+
+    // Folders shared trực tiếp
+    const char *sql_folders =
         "SELECT f.id, f.name, f.owner_id, u.username, p.permission "
         "FROM permissions p "
         "JOIN folders f ON p.target_type = 1 AND p.target_id = f.id "
@@ -702,33 +709,71 @@ cJSON* list_shared_folders(int user_id) {
         "ORDER BY f.id";
 
     sqlite3_stmt *stmt = NULL;
-    if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) != SQLITE_OK) {
-        return NULL;
+    if (sqlite3_prepare_v2(db_global, sql_folders, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, user_id);
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int id = sqlite3_column_int(stmt, 0);
+            const unsigned char *name = sqlite3_column_text(stmt, 1);
+            int owner_id = sqlite3_column_int(stmt, 2);
+            const unsigned char *owner_name = sqlite3_column_text(stmt, 3);
+            int perm = sqlite3_column_int(stmt, 4);
+
+            cJSON *item = cJSON_CreateObject();
+            cJSON_AddNumberToObject(item, "id", id);
+            cJSON_AddStringToObject(item, "name", (const char *)name);
+            cJSON_AddNumberToObject(item, "owner_id", owner_id);
+            cJSON_AddStringToObject(item, "owner_name", owner_name ? (const char *)owner_name : "");
+            cJSON_AddNumberToObject(item, "permission", perm);
+            cJSON_AddNumberToObject(item, "target_type", 1);
+            cJSON_AddStringToObject(item, "type", "folder");
+            cJSON_AddItemToArray(items, item);
+
+            cJSON *folder_item = cJSON_CreateObject();
+            cJSON_AddNumberToObject(folder_item, "id", id);
+            cJSON_AddStringToObject(folder_item, "name", (const char *)name);
+            cJSON_AddNumberToObject(folder_item, "owner_id", owner_id);
+            cJSON_AddStringToObject(folder_item, "owner_name", owner_name ? (const char *)owner_name : "");
+            cJSON_AddNumberToObject(folder_item, "permission", perm);
+            cJSON_AddItemToArray(folders_only, folder_item);
+        }
+        sqlite3_finalize(stmt);
     }
 
-    sqlite3_bind_int(stmt, 1, user_id);
+    // Files shared trực tiếp
+    const char *sql_files =
+        "SELECT fi.id, fi.name, fi.owner_id, u.username, fi.size, p.permission "
+        "FROM permissions p "
+        "JOIN files fi ON p.target_type = 0 AND p.target_id = fi.id "
+        "JOIN users u ON fi.owner_id = u.id "
+        "WHERE p.user_id = ? "
+        "ORDER BY fi.id";
 
-    cJSON *root = cJSON_CreateObject();
-    cJSON *items = cJSON_CreateArray();
-    cJSON_AddItemToObject(root, "folders", items);
+    if (sqlite3_prepare_v2(db_global, sql_files, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, user_id);
 
-    while (sqlite3_step(stmt) == SQLITE_ROW) {
-        int id = sqlite3_column_int(stmt, 0);
-        const unsigned char *name = sqlite3_column_text(stmt, 1);
-        int owner_id = sqlite3_column_int(stmt, 2);
-        const unsigned char *owner_name = sqlite3_column_text(stmt, 3);
-        int perm = sqlite3_column_int(stmt, 4);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int id = sqlite3_column_int(stmt, 0);
+            const unsigned char *name = sqlite3_column_text(stmt, 1);
+            int owner_id = sqlite3_column_int(stmt, 2);
+            const unsigned char *owner_name = sqlite3_column_text(stmt, 3);
+            sqlite3_int64 size = sqlite3_column_int64(stmt, 4);
+            int perm = sqlite3_column_int(stmt, 5);
 
-        cJSON *item = cJSON_CreateObject();
-        cJSON_AddNumberToObject(item, "id", id);
-        cJSON_AddStringToObject(item, "name", (const char *)name);
-        cJSON_AddNumberToObject(item, "owner_id", owner_id);
-        cJSON_AddStringToObject(item, "owner_name", owner_name ? (const char *)owner_name : "");
-        cJSON_AddNumberToObject(item, "permission", perm);
-        cJSON_AddItemToArray(items, item);
+            cJSON *item = cJSON_CreateObject();
+            cJSON_AddNumberToObject(item, "id", id);
+            cJSON_AddStringToObject(item, "name", (const char *)name);
+            cJSON_AddNumberToObject(item, "owner_id", owner_id);
+            cJSON_AddStringToObject(item, "owner_name", owner_name ? (const char *)owner_name : "");
+            cJSON_AddNumberToObject(item, "permission", perm);
+            cJSON_AddNumberToObject(item, "size", (double)size);
+            cJSON_AddNumberToObject(item, "target_type", 0);
+            cJSON_AddStringToObject(item, "type", "file");
+            cJSON_AddItemToArray(items, item);
+        }
+        sqlite3_finalize(stmt);
     }
 
-    sqlite3_finalize(stmt);
     return root;
 }
 
