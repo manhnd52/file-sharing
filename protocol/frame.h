@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MAX_PAYLOAD 8192
+#define MAX_PAYLOAD 131072
 #define AUTH_TOKEN_SIZE 16
 #define SESSIONID_SIZE 16
 

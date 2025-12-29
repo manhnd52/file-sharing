@@ -6,6 +6,7 @@
 #include "client.h"
 
 #include "api/download_api.h"
+#include "utils/file_system_util.h"
 
 static int sent_download_init_cmd(int folder_id, Frame* res) {
     cJSON *json = cJSON_CreateObject();
@@ -98,10 +99,12 @@ int download_file_api(const char* storage_path, int folder_id, Frame* res) {
     cJSON *session_item = cJSON_GetObjectItemCaseSensitive(payload_json, "sessionId");
     cJSON *chunk_size_item = cJSON_GetObjectItemCaseSensitive(payload_json, "chunk_size");
     cJSON *file_size_item = cJSON_GetObjectItemCaseSensitive(payload_json, "file_size");
+    cJSON *file_name_item = cJSON_GetObjectItemCaseSensitive(payload_json, "file_name");
 
     if (!cJSON_IsString(session_item) || session_item->valuestring[0] == '\0' ||
         !cJSON_IsNumber(chunk_size_item) ||
-        !cJSON_IsNumber(file_size_item)) {
+        !cJSON_IsNumber(file_size_item) ||
+        !cJSON_IsString(file_name_item) || file_name_item->valuestring[0] == '\0') {
         cJSON_Delete(payload_json);
         return -1;
     }
@@ -117,6 +120,9 @@ int download_file_api(const char* storage_path, int folder_id, Frame* res) {
     uint64_t file_size = (uint64_t)file_size_dbl;
     char session_id[64] = {0};
     strncpy(session_id, session_item->valuestring, sizeof(session_id) - 1);
+    char file_name[256] = {0};
+    strncpy(file_name, file_name_item->valuestring, sizeof(file_name) - 1);
+    file_name[sizeof(file_name) - 1] = '\0';
 
     cJSON_Delete(payload_json);
     payload_json = NULL;
@@ -126,7 +132,15 @@ int download_file_api(const char* storage_path, int folder_id, Frame* res) {
         total_chunks = (uint32_t)((file_size + chunk_size - 1) / chunk_size);
     }
 
-    FILE *fp = fopen(storage_path, "wb");
+    char target_path[1024] = {0};
+    size_t folder_len = strlen(storage_path);
+    if (storage_path[folder_len - 1] == '/' || storage_path[folder_len - 1] == '\\') {
+        snprintf(target_path, sizeof(target_path), "%s%s", storage_path, file_name);
+    } else {
+        snprintf(target_path, sizeof(target_path), "%s/%s", storage_path, file_name);
+    }
+
+    FILE *fp = fopen_mkdir(target_path, "wb");
     if (!fp) {
         return -1;
     }
@@ -147,13 +161,17 @@ int download_file_api(const char* storage_path, int folder_id, Frame* res) {
         }
 
         size_t written = fwrite(chunk_resp.payload, 1, chunk_resp.payload_len, fp);
+
         if (written != chunk_resp.payload_len) {
+            printf("WRITE ERRR\n");
             rc = -1;
             goto cleanup;
         }
     }
 
     rc = sent_download_finish_cmd(session_id, res);
+    print_frame(res);
+    
     if (rc != 0) {
         goto cleanup;
     }
@@ -169,7 +187,7 @@ cleanup:
     if (fp) {
         fclose(fp);
         if (rc != 0) {
-            remove(storage_path);
+            remove(target_path);
         }
     }
     return rc;

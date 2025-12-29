@@ -31,8 +31,6 @@ static int sent_upload_init_cmd(const char *file_name, int parent_folder_id,
         return rc;
     }
 
-    print_frame(res);
-
     if (res->msg_type != MSG_RESPOND || res->header.resp.status != STATUS_OK ||
         res->payload_len == 0) {
         return -1;
@@ -47,15 +45,17 @@ static int sent_upload_chunk_cmd(const uint8_t session_id[SESSIONID_SIZE],
     if (!session_id || chunk_length == 0 || !data || !resp) {
         return -1;
     }
-
     Frame frame = {0};
-    printf("Chunk_index: %d\n Chunk length: %d", chunk_index, chunk_length);
     if (build_data_frame(&frame, 0, session_id, chunk_index, chunk_length, data) != 0) {
         return -1;
     }
+    printf("SENT DATA: \n");
+    print_frame(&frame);
     int rc = connect_send_request(g_conn, &frame, resp);
-    print_frame(resp);
+    printf("RCV ACK DATA: \n");
 
+    print_frame(resp);
+    
     if (resp->msg_type != MSG_RESPOND || resp->header.resp.status != STATUS_OK) {
         rc = -1;
     }
@@ -155,6 +155,7 @@ int upload_file_api(const char* file_path, int parent_folder_id, Frame* res) {
     uint32_t chunk_index = 1;
     size_t chunk_len = 0;
 
+    printf("***A\n");
     while ((chunk_len = fread(buffer, 1, MAX_PAYLOAD, fp)) > 0) {
         Frame chunk_resp = {0};
         rc = sent_upload_chunk_cmd(session_id, chunk_index, (uint32_t)chunk_len, buffer, &chunk_resp);

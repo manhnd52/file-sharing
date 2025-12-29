@@ -9,6 +9,7 @@
 #include "frame.h"
 #include "utils/config_util.h"
 
+#include <unistd.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -284,6 +285,12 @@ static void handle_download(void) {
         puts("  invalid file_id");
         return;
     }
+    
+    char cwd[256];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("Current working directory: %s\n", cwd);
+    }
+
     read_line("  output path", storage_path, sizeof(storage_path));
     if (storage_path[0] == '\0') {
         puts("  output path required");

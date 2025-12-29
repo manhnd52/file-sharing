@@ -44,8 +44,9 @@ Respond với DATA frame chứa chunk dữ liệu tương ứng của file.
 void download_chunk_handler(Conn *c, Frame *req) {
     if (!c || !req) return;
 
+
     cJSON *root = cJSON_Parse((const char *)req->payload);
-    if (!root) {
+    if (!root) {   
         respond_download_finish_error(c, req, "{\"error\": \"invalid_json\"}");
         return;
     }
@@ -77,6 +78,7 @@ void download_chunk_handler(Conn *c, Frame *req) {
     }
 
     uint32_t chunk_index = (uint32_t)chunk_index_json->valueint;
+    printf("[DOWNLOAD] Requested Chunk index: %d\n", chunk_index);
     if (chunk_index != ds->last_requested_chunk + 1) {
         respond_download_finish_error(c, req, "{\"error\": \"invalid_chunk_index\"}");
         cJSON_Delete(root);
@@ -91,6 +93,7 @@ void download_chunk_handler(Conn *c, Frame *req) {
         cJSON_Delete(root);
         return;
     }
+
     uint64_t offset = (uint64_t)(chunk_index - 1) * (uint64_t)ds->chunk_size;
     if (lseek(fd, offset, SEEK_SET) == (off_t)-1) {
         close(fd);
@@ -99,6 +102,7 @@ void download_chunk_handler(Conn *c, Frame *req) {
         return;
     }
 
+
     uint8_t *buffer = (uint8_t *)malloc(ds->chunk_size);
     if (!buffer) {
         close(fd);
@@ -106,23 +110,26 @@ void download_chunk_handler(Conn *c, Frame *req) {
         cJSON_Delete(root);
         return;
     }
+
     ssize_t r = read(fd, buffer, ds->chunk_size);
-    if (r < 0) {
+
+    if (r <= 0) {
         free(buffer);
         close(fd);
         respond_download_finish_error(c, req, "{\"error\": \"failed_to_read_file\"}");
         cJSON_Delete(root);
         return;
     }
-    free(buffer);
-    close(fd);
     // Gửi DATA frame chứa chunk dữ liệu
     Frame data_frame;
     build_data_frame(&data_frame, req->header.cmd.request_id, session_id,
                         chunk_index, (uint32_t)r, buffer);
     send_frame(c->sockfd, &data_frame);
     ds->last_requested_chunk = chunk_index;
+
+    close(fd);
     cJSON_Delete(root);
+    free(buffer);
 }
 
 void download_init_handler(Conn *c, Frame *f) {
