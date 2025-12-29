@@ -317,7 +317,7 @@ int send_frame(int sockfd, Frame *f) {
 int recv_frame(int sockfd, Frame *f) {
   uint32_t length;
   if (read_exact(sockfd, &length, LENGTH_FIELD_SIZE) != LENGTH_FIELD_SIZE) {
-    printf("Failed to read length field\n");
+    printf("[RCV_FRAME] Failed to read length field\n");
     return -1;
   }
 
@@ -328,7 +328,9 @@ int recv_frame(int sockfd, Frame *f) {
     printf("[FRAME] Frame too large: %u\n", f->total_length);
     return -2; // Too large
   }
+
   uint8_t *buf = malloc(f->total_length); // chứa type, header + payload
+
   if (!buf) {
     printf("[FRAME] Failed to allocate memory for frame buffer\n");
     return -1;

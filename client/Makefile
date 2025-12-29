@@ -7,6 +7,7 @@ BUILD_DIR = build
 CLIENT_SRC = $(wildcard src/*.c) $(wildcard src/api/*.c) $(wildcard src/utils/*.c)
 
 PROTO_SRC = $(wildcard ../protocol/*.c)
+
 SRC = $(sort $(CLIENT_SRC) $(PROTO_SRC))
 
 define src2obj

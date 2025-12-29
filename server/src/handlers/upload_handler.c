@@ -74,7 +74,7 @@ void upload_handler(Conn *c, Frame *data) {
 	}
 
 	// Update session metadata
-	if (chunk_index == us->last_received_chunk + 1 && us->chunk_length > chunk_length) {
+	if (chunk_index == us->last_received_chunk + 1 && us->chunk_size >= chunk_length) {
 		us->last_received_chunk = chunk_index;
 	} else {
 		Frame err_frame;
@@ -102,9 +102,9 @@ void upload_handler(Conn *c, Frame *data) {
 		return;
 	}
 
-	off_t offset = ((off_t)chunk_index - 1) * (off_t)chunk_length;
-	ssize_t w = pwrite(fd, data->payload, data->payload_len, offset);
-	if (w < 0 || (size_t)w != data->payload_len) {
+	off_t offset = ((off_t)chunk_index - 1) * (off_t)us->chunk_size;
+	ssize_t write_num = pwrite(fd, data->payload, data->payload_len, offset);
+	if (write_num < 0 || (size_t)write_num != data->payload_len) {
 		Frame err_frame;
 		build_respond_frame(&err_frame, data->header.data.request_id, STATUS_NOT_OK,
 		                   "{\"error\": \"Failed to write chunk\"}");
@@ -119,7 +119,7 @@ void upload_handler(Conn *c, Frame *data) {
 	cJSON *response = cJSON_CreateObject();
 	cJSON_AddStringToObject(response, "status", "ok");
 	cJSON_AddNumberToObject(response, "chunk_index", chunk_index);
-	cJSON_AddNumberToObject(response, "bytes_written", data->payload_len);
+	cJSON_AddNumberToObject(response, "bytes_written", write_num);
 	char *json_resp = cJSON_PrintUnformatted(response);
 	
 	Frame ok_frame;
@@ -164,7 +164,7 @@ void upload_init_handler(Conn *c, Frame *f) {
 		return;
 	}
 
-	uint32_t chunk_length = (uint32_t)chunkSizeItem->valuedouble;
+	uint32_t chunk_size = (uint32_t)chunkSizeItem->valuedouble;
 	const char *file_name = fileName->valuestring;
 	int parent_folder_id = parentFolderIdItem->valueint;
 	uint64_t file_size = (uint64_t)fileSizeItem->valuedouble;
@@ -194,7 +194,7 @@ void upload_init_handler(Conn *c, Frame *f) {
 			snprintf(ss[i].uuid_str, sizeof(ss[i].uuid_str), "%s", uuid_str);
 			ss[i].parent_folder_id = parent_folder_id;
 			ss[i].last_received_chunk = 0;
-			ss[i].chunk_length = chunk_length;
+			ss[i].chunk_size = chunk_size;
 			ss[i].total_received_size = 0;
 			ss[i].expected_file_size = file_size;
 			us = &ss[i];
@@ -276,15 +276,30 @@ void upload_finish_handler(Conn *c, Frame *f) {
 	}
 
 	// Save file metadata to database, associate with user, etc. (omitted for brevity)
-	file_save_metadata(c->user_id, us->parent_folder_id, us->file_name, us->uuid_str, us->total_received_size);
+	int file_id = file_save_metadata(c->user_id, us->parent_folder_id, us->file_name, us->uuid_str, us->total_received_size);
 
 	// Clear session
 	memset(us, 0, sizeof(UploadSession));
 
 	// Respond success
 	Frame ok;
-	build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK, "{\"status\": \"upload_finished\"}");
-	send_frame(c->sockfd, &ok);
+	char json_resp[128];
 
+	snprintf(
+		json_resp,
+		sizeof(json_resp),
+		"{\"status\":\"upload_finished\", \"file_id\": %d}",
+		file_id
+	);
+
+	build_respond_frame(
+		&ok,
+		f->header.cmd.request_id,
+		STATUS_OK,
+		json_resp
+	);
+
+	send_frame(c->sockfd, &ok);
+	
 	return;
 }

@@ -4,53 +4,8 @@
 #include <string.h>
 #include "client.h"
 
-static void extract_file_name(const char *path, char *out, size_t out_size) {
-    if (!path || !out || out_size == 0) {
-        return;
-    }
-
-    const char *last_slash = strrchr(path, '/');
-    const char *last_backslash = strrchr(path, '\\');
-    const char *start = path;
-    if (last_slash && last_backslash) {
-        start = (last_backslash > last_slash) ? last_backslash + 1 : last_slash + 1;
-    } else if (last_slash) {
-        start = last_slash + 1;
-    } else if (last_backslash) {
-        start = last_backslash + 1;
-    }
-
-    size_t len = strlen(start);
-    if (len >= out_size) {
-        len = out_size - 1;
-    }
-    memcpy(out, start, len);
-    out[len] = '\0';
-}
-
-static int uuid_string_to_bytes(const char *uuid_str, uint8_t out[SESSIONID_SIZE]) {
-    if (!uuid_str || strlen(uuid_str) != 36) {
-        return -1;
-    }
-
-    const int str_idxs[SESSIONID_SIZE] = {
-        0, 2, 4, 6,
-        9, 11,
-        14, 16,
-        19, 21,
-        24, 26, 28, 30, 32, 34
-    };
-
-    for (int i = 0; i < SESSIONID_SIZE; ++i) {
-        char byte_str[3] = { uuid_str[str_idxs[i]], uuid_str[str_idxs[i] + 1], '\0' };
-        unsigned int byte_val = 0;
-        if (sscanf(byte_str, "%02x", &byte_val) != 1) {
-            return -1;
-        }
-        out[i] = (uint8_t)byte_val;
-    }
-    return 0;
-}
+#include "utils/file_system_util.h"
+#include "utils/uuid_util.h"
 
 static int sent_upload_init_cmd(const char *file_name, int parent_folder_id,
                                 uint64_t file_size, Frame *res) {
@@ -76,8 +31,6 @@ static int sent_upload_init_cmd(const char *file_name, int parent_folder_id,
         return rc;
     }
 
-    print_frame(res);
-
     if (res->msg_type != MSG_RESPOND || res->header.resp.status != STATUS_OK ||
         res->payload_len == 0) {
         return -1;
@@ -92,14 +45,21 @@ static int sent_upload_chunk_cmd(const uint8_t session_id[SESSIONID_SIZE],
     if (!session_id || chunk_length == 0 || !data || !resp) {
         return -1;
     }
-
     Frame frame = {0};
-    printf("Chunk_index: %d\n Chunk length: %d", chunk_index, chunk_length);
     if (build_data_frame(&frame, 0, session_id, chunk_index, chunk_length, data) != 0) {
         return -1;
     }
+    printf("SENT DATA: \n");
+    print_frame(&frame);
     int rc = connect_send_request(g_conn, &frame, resp);
+    printf("RCV ACK DATA: \n");
+
     print_frame(resp);
+    
+    if (resp->msg_type != MSG_RESPOND || resp->header.resp.status != STATUS_OK) {
+        rc = -1;
+    }
+
     return rc;
 }
 
@@ -116,7 +76,13 @@ static int sent_upload_finish_cmd(const char *session_id_str, Frame *res) {
     cJSON_AddStringToObject(json, "cmd", "UPLOAD_FINISH");
     cJSON_AddStringToObject(json, "session_id", session_id_str);
     int rc = send_cmd(json, res);
+
+    if (res->msg_type != MSG_RESPOND || res->header.resp.status != STATUS_OK) {
+        rc = -1;
+    }
+
     cJSON_Delete(json);
+
     return rc;
 }
 
@@ -124,36 +90,33 @@ int upload_file_api(const char* file_path, int parent_folder_id, Frame* res) {
     if (!file_path || file_path[0] == '\0' || parent_folder_id <= 0 || !res) {
         return -1;
     }
-
+    int rc = -1;
+    char file_name[256] = {0};
+    int file_size = -1;
+    Frame init_resp = {0};
+    char *payload_copy = NULL;
+    cJSON *payload_json = NULL;
+    
+    // Tìm file
     FILE *fp = fopen(file_path, "rb");
     if (!fp) {
+        printf("[UPLOAD] Không tìm thấy file");
         return -1;
     }
 
-    int rc = -1;
-    if (fseek(fp, 0, SEEK_END) != 0) {
-        goto cleanup;
-    }
+    // Lấy size của file
+    file_size= get_file_size(file_path);
+    if (file_size == -1) goto cleanup;
 
-    long file_size_long = ftell(fp);
-    if (file_size_long < 0) {
-        goto cleanup;
-    }
-
-    uint64_t file_size = (uint64_t)file_size_long;
-    rewind(fp);
-
-    char file_name[256] = {0};
+    // Lấy file name
     extract_file_name(file_path, file_name, sizeof(file_name));
 
-    Frame init_resp = {0};
+
     rc = sent_upload_init_cmd(file_name, parent_folder_id, file_size, &init_resp);
+    
     if (rc != 0) {
         goto cleanup;
     }
-
-    char *payload_copy = NULL;
-    cJSON *payload_json = NULL;
 
     payload_copy = (char *)malloc(init_resp.payload_len + 1);
     if (!payload_copy) {
@@ -192,18 +155,13 @@ int upload_file_api(const char* file_path, int parent_folder_id, Frame* res) {
     uint32_t chunk_index = 1;
     size_t chunk_len = 0;
 
+    printf("***A\n");
     while ((chunk_len = fread(buffer, 1, MAX_PAYLOAD, fp)) > 0) {
         Frame chunk_resp = {0};
         rc = sent_upload_chunk_cmd(session_id, chunk_index, (uint32_t)chunk_len, buffer, &chunk_resp);
         if (rc != 0) {
             goto cleanup;
         }
-
-        if (chunk_resp.msg_type != MSG_RESPOND || chunk_resp.header.resp.status != STATUS_OK) {
-            rc = -1;
-            goto cleanup;
-        }
-
         ++chunk_index;
     }
 
@@ -214,11 +172,6 @@ int upload_file_api(const char* file_path, int parent_folder_id, Frame* res) {
 
     rc = sent_upload_finish_cmd(session_id_str, res);
     if (rc != 0) {
-        goto cleanup;
-    }
-
-    if (res->msg_type != MSG_RESPOND || res->header.resp.status != STATUS_OK) {
-        rc = -1;
         goto cleanup;
     }
 
