@@ -1,39 +1,45 @@
 #include "api/file_api.h"
-
 #include "client.h"
 #include "cJSON.h"
 
-#include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
-static int send_list_request(int folder_id, Frame *resp) {
-    if (!resp) {
-        return -1;
-    }
-
-    cJSON *json = cJSON_CreateObject();
-    if (!json) {
-        return -1;
-    }
-
-    cJSON_AddStringToObject(json, "cmd", "LIST");
-    if (folder_id > 0) {
-        cJSON_AddNumberToObject(json, "folder_id", folder_id);
-    }
-
+static int send_json_cmd(cJSON *json, Frame *resp) {
+    if (!json || !resp) return -1;
     int rc = send_cmd(json, resp);
     cJSON_Delete(json);
     return rc;
 }
 
-// LIST: get folder info and its item
-int list_api(int folder_id, Frame *resp) {
-    return send_list_request(folder_id, resp);
+int delete_file_api(int file_id, Frame *resp) {
+    cJSON *json = cJSON_CreateObject();
+    if (!json) return -1;
+    cJSON_AddStringToObject(json, "cmd", "DELETE_FILE");
+    cJSON_AddNumberToObject(json, "file_id", file_id);
+    return send_json_cmd(json, resp);
 }
 
-int ping_api(Frame *resp) {
-    return send_simple_cmd("PING", resp);
+int share_file_api(int file_id, const char *username, int permission, Frame *resp) {
+    cJSON *json = cJSON_CreateObject();
+    if (!json) return -1;
+    cJSON_AddStringToObject(json, "cmd", "SHARE_FILE");
+    cJSON_AddNumberToObject(json, "file_id", file_id);
+    cJSON_AddStringToObject(json, "username", username ? username : "");
+    cJSON_AddNumberToObject(json, "permission", permission);
+    return send_json_cmd(json, resp);
+}
+
+int rename_file_api(int file_id, const char *new_name, Frame *resp) {
+    cJSON *json = cJSON_CreateObject();
+    if (!json) return -1;
+    cJSON_AddStringToObject(json, "cmd", "RENAME_FILE");
+    cJSON_AddNumberToObject(json, "file_id", file_id);
+    cJSON_AddStringToObject(json, "new_name", new_name ? new_name : "");
+    return send_json_cmd(json, resp);
+}
+
+int list_shared_items_api(Frame *resp) {
+    cJSON *json = cJSON_CreateObject();
+    if (!json) return -1;
+    cJSON_AddStringToObject(json, "cmd", "LIST_SHARED_ITEMS");
+    return send_json_cmd(json, resp);
 }
 

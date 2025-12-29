@@ -28,7 +28,12 @@ bool db_start() {
         // Tạo schema
         db_init(DB_SCHEMA_PATH);
     } 
-    return sqlite3_open(DB_PATH, &db_global) == SQLITE_OK;
+    if (sqlite3_open(DB_PATH, &db_global) != SQLITE_OK) {
+        return false;
+    }
+    // Enable foreign keys to ensure cascades work
+    sqlite3_exec(db_global, "PRAGMA foreign_keys = ON;", NULL, NULL, NULL);
+    return true;
 }
 
 bool db_init(const char* sql_file) {   
@@ -82,4 +87,3 @@ void db_close() {
         db_global = NULL;
     }
 }
-

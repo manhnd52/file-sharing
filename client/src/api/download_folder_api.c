@@ -2,7 +2,7 @@
 #include "api/file_api.h"
 #include "cJSON.h"
 #include "utils/file_system_util.h"
-
+#include "api/folder_api.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>

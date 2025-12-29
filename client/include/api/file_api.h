@@ -3,7 +3,9 @@
 
 #include "frame.h"
 
-int list_api(int folder_id, Frame *resp);
-int ping_api(Frame *resp);
+int delete_file_api(int file_id, Frame *resp);
+int share_file_api(int file_id, const char *username, int permission, Frame *resp);
+int rename_file_api(int file_id, const char *new_name, Frame *resp);
+int list_shared_items_api(Frame *resp);
 
 #endif

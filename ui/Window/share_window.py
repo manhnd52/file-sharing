@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QPushButton,
     QHBoxLayout,
+    QComboBox,
 )
 
 
@@ -22,11 +23,13 @@ class ShareWindow(QDialog):
         layout.addWidget(QLabel("Thêm người"))
         self.user_input = QLineEdit()
         layout.addWidget(self.user_input)
+        self.perm_select = QComboBox()
+        self.perm_select.addItem("Chỉ đọc", 1)
+        self.perm_select.addItem("Đọc/ghi", 2)
+        layout.addWidget(self.perm_select)
 
         layout.addWidget(QLabel("Những người có quyền truy cập"))
         self.list = QListWidget()
-        self.list.addItem("manhnd52  (Owner)")
-        self.list.addItem("khoidd24  (Editor)")
         layout.addWidget(self.list)
 
         btns = QHBoxLayout()
