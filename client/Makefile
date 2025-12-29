@@ -1,40 +1,53 @@
-CC = gcc
-CFLAGS = -I../protocol -Iinclude -Wall -fPIC
-LDFLAGS = -lpthread
+CC := gcc
 
-BUILD_DIR = build
+# ===== Flags =====
+CFLAGS := -Wall -Wextra -fPIC -Iinclude -I../protocol
+DEPFLAGS := -MMD -MP
 
-CLIENT_SRC = $(wildcard src/*.c) $(wildcard src/api/*.c) $(wildcard src/utils/*.c)
+LDFLAGS :=
+LDLIBS := -lpthread
 
-PROTO_SRC = $(wildcard ../protocol/*.c)
-SRC = $(sort $(CLIENT_SRC) $(PROTO_SRC))
+# ===== Directories =====
+BUILD_DIR := build
+OBJ_DIR := $(BUILD_DIR)/obj
+DEP_DIR := $(BUILD_DIR)/dep
 
-define src2obj
-$(BUILD_DIR)/$(subst /,_,$(subst ../,,$(patsubst %.c,%.o,$(1))))
-endef
+# ===== Sources =====
+CLIENT_SRC := \
+	$(wildcard src/*.c) \
+	$(wildcard src/api/*.c) \
+	$(wildcard src/utils/*.c)
 
-OBJ = $(foreach src,$(SRC),$(call src2obj,$(src)))
+PROTO_SRC := $(wildcard ../protocol/*.c)
 
-all: libfsclient.so
+SRC := $(CLIENT_SRC) $(PROTO_SRC)
+
+# ===== Objects & Deps =====
+OBJ := $(patsubst %.c,$(OBJ_DIR)/%.o,$(SRC))
+DEP := $(patsubst %.c,$(DEP_DIR)/%.d,$(SRC))
+
+# ===== Targets =====
+all: libfsclient.so client
 
 libfsclient.so: $(OBJ)
-	$(CC) -shared -o $@ $(OBJ) $(LDFLAGS)
+	$(CC) -shared -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
-define make-obj-rule
-$(call src2obj,$(1)): $(1)
-	mkdir -p $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c $$< -o $$@
-endef
+client: $(OBJ)
+	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
-$(foreach src,$(SRC),$(eval $(call make-obj-rule,$(src))))
+# ===== Compile rule =====
+$(OBJ_DIR)/%.o: %.c
+	@mkdir -p $(dir $@) $(DEP_DIR)/$(dir $*)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -c $< -o $@
 
+# ===== Include dependencies =====
+-include $(DEP)
+
+# ===== Utilities =====
 clean:
-	rm -f $(OBJ) client
-
-run: client
-	./client 127.0.0.1 5555
+	rm -rf $(BUILD_DIR) libfsclient.so client
 
 run_test: client
 	./client --test
 
-.PHONY: clean run run_test
+.PHONY: all clean run_test

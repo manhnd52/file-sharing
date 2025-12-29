@@ -2,12 +2,15 @@
 
 #include "api/auth_api.h"
 #include "api/folder_api.h"
+#include "api/download_api.h"
 #include "api/file_api.h"
+#include "api/upload_api.h"
 #include "client.h"
 #include "cJSON.h"
 #include "frame.h"
 #include "utils/config_util.h"
 
+#include <unistd.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -233,6 +236,108 @@ static void handle_list(void) {
     print_response(&resp);
 }
 
+static void handle_upload(void) {
+    char file_path[512] = {0};
+    char parent_input[64] = {0};
+    char cwd[256];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("Current working directory: %s\n", cwd);
+    }
+
+    puts("Upload file:");
+    read_line("  file path", file_path, sizeof(file_path));
+    if (file_path[0] == '\0') {
+        puts("  file path required");
+        return;
+    }
+
+    int parent_folder_id = 0;
+    if (saved_root_folder_id > 0) {
+        printf("  parent_folder_id default=%d (press Enter to reuse)\n", saved_root_folder_id);
+    }
+    read_line("  parent_folder_id", parent_input, sizeof(parent_input));
+    if (parent_input[0] == '\0' && saved_root_folder_id > 0) {
+        parent_folder_id = saved_root_folder_id;
+    } else {
+        parent_folder_id = (int)strtol(parent_input, NULL, 10);
+    }
+
+    if (parent_folder_id <= 0) {
+        puts("  invalid parent_folder_id");
+        return;
+    }
+
+    Frame resp = {0};
+    int rc = upload_file_api(file_path, parent_folder_id, &resp);
+    if (rc != 0) {
+        fprintf(stderr, "upload_file_api failed (%d)\n", rc);
+        return;
+    }
+    print_response(&resp);
+}
+
+static void handle_download_folder(void) {
+    char storage_path[512] = {0};
+    char file_input[64] = {0};
+    puts("Download folder:");
+    read_line("  folder_id", file_input, sizeof(file_input));
+    int folder_id = (int)strtol(file_input, NULL, 10);
+    if (folder_id <= 0) {
+        puts("  invalid folder_id");
+        return;
+    }
+    
+    char cwd[256];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("Current working directory: %s\n", cwd);
+    }
+
+    read_line("  output path", storage_path, sizeof(storage_path));
+    if (storage_path[0] == '\0') {
+        puts("  output path required");
+        return;
+    }
+
+    Frame resp = {0};
+    int rc = download_folder_api(storage_path, folder_id, &resp);
+    if (rc != 0) {
+        fprintf(stderr, "download_folder_api failed (%d)\n", rc);
+        return;
+    }
+    print_response(&resp);
+}
+
+static void handle_download_file(void) {
+    char storage_path[512] = {0};
+    char file_input[64] = {0};
+    puts("Download file:");
+    read_line("  file_id", file_input, sizeof(file_input));
+    int file_id = (int)strtol(file_input, NULL, 10);
+    if (file_id <= 0) {
+        puts("  invalid file_id");
+        return;
+    }
+
+    char cwd[256];
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("Current working directory: %s\n", cwd);
+    }
+
+    read_line("  output path", storage_path, sizeof(storage_path));
+    if (storage_path[0] == '\0') {
+        puts("  output path required");
+        return;
+    }
+
+    Frame resp = {0};
+    int rc = download_file_api(storage_path, file_id, &resp);
+    if (rc != 0) {
+        fprintf(stderr, "download_file_api failed (%d)\n", rc);
+        return;
+    }
+    print_response(&resp);
+}
+
 static void show_menu(void) {
     puts("\n=== Client API Tester ===");
     puts(" 1) Register");
@@ -242,6 +347,9 @@ static void show_menu(void) {
     puts(" 5) GET_ME");
     puts(" 6) PING");
     puts(" 7) LIST folder");
+    puts(" 8) Upload file");
+    puts(" 9) Download folder");
+    puts("10) Download file");
     puts(" 0) Exit");
     printf("Choose an option: ");
     fflush(stdout);
@@ -273,29 +381,39 @@ int run_client_tests(void) {
             continue;
         }
 
-        switch (choice[0]) {
-            case '1':
+        int option = (int)strtol(choice, NULL, 10);
+        switch (option) {
+            case 1:
                 handle_register();
                 break;
-            case '2':
+            case 2:
                 handle_login();
                 break;
-            case '3':
+            case 3:
                 handle_auth();
                 break;
-            case '4':
+            case 4:
                 handle_logout();
                 break;
-            case '5':
+            case 5:
                 handle_get_me();
                 break;
-            case '6':
+            case 6:
                 handle_ping();
                 break;
-            case '7':
+            case 7:
                 handle_list();
                 break;
-            case '0':
+            case 8:
+                handle_upload();
+                break;
+            case 9:
+                handle_download_folder();
+                break;
+            case 10:
+                handle_download_file();
+                break;
+            case 0:
                 running = false;
                 break;
             default:

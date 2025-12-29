@@ -1,4 +1,5 @@
 #include "frame.h"
+#include "cJSON.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <stdio.h>
@@ -91,6 +92,77 @@ int build_data_frame(Frame *f, uint32_t request_id,
     f->payload_len = 0;
   // total_length excludes the 4-byte length field; include msg_type + header + payload
   f->total_length = MST_TYPE_SIZE + DATA_HEADER_SIZE + f->payload_len; // host order
+  return 0;
+}
+
+int print_frame(Frame *f) {
+  if (!f) {
+    return -1;
+  }
+
+  printf("[FRAME] total_length=%u msg_type=%u payload_len=%zu\n", f->total_length,
+         f->msg_type, f->payload_len);
+  switch (f->msg_type) {
+  case MSG_CMD:
+    printf("  CMD request_id=%u\n", f->header.cmd.request_id);
+    break;
+  case MSG_RESPOND:
+    printf("  RESPOND request_id=%u status=%s\n", f->header.resp.request_id,
+           f->header.resp.status == STATUS_OK ? "OK" : "NOT_OK");
+    break;
+  case MSG_DATA: {
+    char session_hex[SESSIONID_SIZE * 2 + 1] = {0};
+    for (int i = 0; i < SESSIONID_SIZE; ++i) {
+      snprintf(session_hex + i * 2, 3, "%02x", f->header.data.session_id[i]);
+    }
+    printf("  DATA request_id=%u chunk_index=%u chunk_length=%u session_id=%s\n",
+           f->header.data.request_id, f->header.data.chunk_index,
+           f->header.data.chunk_length, session_hex);
+    break;
+  }
+  case MSG_AUTH:
+    printf("  AUTH request_id=%u\n", f->header.auth.request_id);
+    break;
+  default:
+    printf("  <unknown frame type>\n");
+    return -1;
+  }
+
+  if (f->payload_len > 0) {
+    if (f->msg_type == MSG_CMD || f->msg_type == MSG_RESPOND) {
+      char *payload_copy = (char *)malloc(f->payload_len + 1);
+      if (payload_copy) {
+        memcpy(payload_copy, f->payload, f->payload_len);
+        payload_copy[f->payload_len] = '\0';
+        cJSON *root = cJSON_Parse(payload_copy);
+        if (root) {
+          char *pretty = cJSON_Print(root);
+          if (pretty) {
+            printf("  payload JSON:\n%s\n", pretty);
+            cJSON_free(pretty);
+          } else {
+            printf("  payload JSON: %s\n", payload_copy);
+          }
+          cJSON_Delete(root);
+        } else {
+          printf("  payload JSON: %s\n", payload_copy);
+        }
+        free(payload_copy);
+      }
+    } else {
+      size_t len = f->payload_len;
+      size_t preview = len > 64 ? 64 : len;
+      printf("  payload (%zu bytes): ", len);
+      for (size_t i = 0; i < preview; ++i) {
+        printf("%02x", f->payload[i]);
+      }
+      if (preview < len) {
+        printf("...");
+      }
+      printf("\n");
+    }
+  }
+
   return 0;
 }
 
@@ -245,7 +317,7 @@ int send_frame(int sockfd, Frame *f) {
 int recv_frame(int sockfd, Frame *f) {
   uint32_t length;
   if (read_exact(sockfd, &length, LENGTH_FIELD_SIZE) != LENGTH_FIELD_SIZE) {
-    printf("Failed to read length field\n");
+    printf("[RCV_FRAME] Failed to read length field\n");
     return -1;
   }
 
@@ -256,7 +328,9 @@ int recv_frame(int sockfd, Frame *f) {
     printf("[FRAME] Frame too large: %u\n", f->total_length);
     return -2; // Too large
   }
+
   uint8_t *buf = malloc(f->total_length); // chứa type, header + payload
+
   if (!buf) {
     printf("[FRAME] Failed to allocate memory for frame buffer\n");
     return -1;

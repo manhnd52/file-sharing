@@ -44,9 +44,13 @@ int send_cmd(cJSON *json, Frame *res) {
     int rc = build_cmd_frame(&request, 0, payload);
     if (rc == 0) {
         rc = connect_send_request(g_conn, &request, res);
+        print_frame(&request);
     }
 
     free(payload);
+
+    print_frame(res);
+
     return rc;
 }
 

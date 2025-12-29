@@ -13,7 +13,7 @@
 typedef struct {
   uint8_t session_id[BYTE_UUID_SIZE];
   uint32_t last_received_chunk;
-  uint32_t chunk_length;
+  uint32_t chunk_size;
   uint64_t total_received_size;
   uint64_t expected_file_size;
   int parent_folder_id;   // folder ID in which the file will be stored

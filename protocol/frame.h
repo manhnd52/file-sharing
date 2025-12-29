@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define MAX_PAYLOAD 8192
+#define MAX_PAYLOAD 131072
 #define AUTH_TOKEN_SIZE 16
 #define SESSIONID_SIZE 16
 
@@ -82,4 +82,6 @@ int parse_frame(uint8_t *buf, size_t len, Frame *f);
 int send_frame(int sockfd, Frame *f);
 int recv_frame(int sockfd, Frame *f);
 
+// --- Utils ---
+int print_frame(Frame *f);
 #endif

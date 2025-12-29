@@ -64,7 +64,7 @@ int auth_api(const char *token, Frame *resp) {
     return rc;
 }
 
-int logout_api(Connect *conn, Frame *resp) {
+int logout_api(Frame *resp) {
     cJSON *json = cJSON_CreateObject();
     if (!json) {
         return -1;
