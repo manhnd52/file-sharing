@@ -19,7 +19,6 @@ class LoginWindow(QWidget):
         self.setObjectName("LoginRoot")
         self.is_register_mode = False
         self.setWindowTitle("Đăng nhập Mini Drive")
-        # Cùng kích thước với MainWindow
         self.resize(900, 550)
         self._init_ui()
         self._apply_style()
@@ -50,14 +49,12 @@ class LoginWindow(QWidget):
 
         layout.addSpacing(8)
 
-        user_label = QLabel("Tài khoản (tạm):")
+        user_label = QLabel("Tài khoản:")
         self.user_input = QLineEdit()
-        self.user_input.setPlaceholderText("vd: manhnd52")
 
-        pass_label = QLabel("Mật khẩu (tạm):")
+        pass_label = QLabel("Mật khẩu:")
         self.pass_input = QLineEdit()
         self.pass_input.setEchoMode(QLineEdit.Password)
-        self.pass_input.setPlaceholderText("nhập bất kỳ để test")
 
         layout.addWidget(user_label)
         layout.addWidget(self.user_input)
@@ -119,7 +116,6 @@ class LoginWindow(QWidget):
             self.pass_confirm_label.hide()
             self.pass_confirm_input.hide()
 
-        # Mỗi lần chuyển mode thì xóa dữ liệu cũ
         self.user_input.clear()
         self.pass_input.clear()
         self.pass_confirm_input.clear()
