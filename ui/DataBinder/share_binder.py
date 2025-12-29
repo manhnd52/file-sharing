@@ -25,8 +25,10 @@ class ShareBinder:
     def list_permissions(self, item: dict) -> list:
         if not item or item.get("id", 0) <= 0:
             return []
-        target_type = 1 if item.get("is_folder") else 0
-        ok, resp = fs_client.list_permissions(target_type, item["id"])
+        if item.get("is_folder"):
+            ok, resp = fs_client.list_folder_permissions(item["id"])
+        else:
+            ok, resp = fs_client.list_file_permissions(item["id"])
         if not ok:
             return []
         try:
@@ -38,8 +40,10 @@ class ShareBinder:
     def update_permission(self, item: dict, username: str, permission: int) -> tuple[bool, str]:
         if not item or item.get("id", 0) <= 0 or not username:
             return False, "Thiếu dữ liệu"
-        target_type = 1 if item.get("is_folder") else 0
-        ok, resp = fs_client.update_permission(target_type, item["id"], username, permission)
+        if item.get("is_folder"):
+            ok, resp = fs_client.update_folder_permission(item["id"], username, permission)
+        else:
+            ok, resp = fs_client.update_file_permission(item["id"], username, permission)
         if not ok:
             try:
                 data = json.loads(resp) if resp else {}

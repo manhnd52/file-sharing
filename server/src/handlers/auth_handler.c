@@ -2,6 +2,7 @@
 #include "handlers/auth_handler.h"
 #include "cJSON.h"
 #include "services/user_service.h"
+#include "services/folder_service.h"
 #include "frame.h"
 #include "server.h"
 #include <stdio.h>

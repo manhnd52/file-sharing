@@ -43,18 +43,24 @@ lib.fs_delete_folder_json.argtypes = [c_int, c_char_p, c_size_t]
 lib.fs_delete_folder_json.restype = c_int
 lib.fs_delete_file_json.argtypes = [c_int, c_char_p, c_size_t]
 lib.fs_delete_file_json.restype = c_int
-lib.fs_list_shared_folders_json.argtypes = [c_char_p, c_size_t]
-lib.fs_list_shared_folders_json.restype = c_int
+lib.fs_list_shared_items_json.argtypes = [c_char_p, c_size_t]
+lib.fs_list_shared_items_json.restype = c_int
 lib.fs_share_folder_json.argtypes = [c_int, c_char_p, c_int, c_char_p, c_size_t]
 lib.fs_share_folder_json.restype = c_int
 lib.fs_share_file_json.argtypes = [c_int, c_char_p, c_int, c_char_p, c_size_t]
 lib.fs_share_file_json.restype = c_int
-lib.fs_list_permissions_json.argtypes = [c_int, c_int, c_char_p, c_size_t]
-lib.fs_list_permissions_json.restype = c_int
-lib.fs_update_permission_json.argtypes = [c_int, c_int, c_char_p, c_int, c_char_p, c_size_t]
-lib.fs_update_permission_json.restype = c_int
-lib.fs_rename_item_json.argtypes = [c_int, c_char_p, c_char_p, c_char_p, c_size_t]
-lib.fs_rename_item_json.restype = c_int
+lib.fs_rename_folder_json.argtypes = [c_int, c_char_p, c_char_p, c_size_t]
+lib.fs_rename_folder_json.restype = c_int
+lib.fs_rename_file_json.argtypes = [c_int, c_char_p, c_char_p, c_size_t]
+lib.fs_rename_file_json.restype = c_int
+lib.fs_list_folder_permissions_json.argtypes = [c_int, c_char_p, c_size_t]
+lib.fs_list_folder_permissions_json.restype = c_int
+lib.fs_list_file_permissions_json.argtypes = [c_int, c_char_p, c_size_t]
+lib.fs_list_file_permissions_json.restype = c_int
+lib.fs_update_folder_permission_json.argtypes = [c_int, c_char_p, c_int, c_char_p, c_size_t]
+lib.fs_update_folder_permission_json.restype = c_int
+lib.fs_update_file_permission_json.argtypes = [c_int, c_char_p, c_int, c_char_p, c_size_t]
+lib.fs_update_file_permission_json.restype = c_int
 
 _connected = False
 
@@ -101,10 +107,10 @@ def delete_file(file_id):
         return False, ""
     return _call_json(lib.fs_delete_file_json, c_int(file_id))
 
-def list_shared_folders():
+def list_shared_items():
     if not ensure_connected():
         return False, ""
-    return _call_json(lib.fs_list_shared_folders_json)
+    return _call_json(lib.fs_list_shared_items_json)
 
 def share_folder(folder_id, username, permission):
     if not ensure_connected():
@@ -116,17 +122,32 @@ def share_file(file_id, username, permission):
         return False, ""
     return _call_json(lib.fs_share_file_json, c_int(file_id), username.encode(), c_int(permission))
 
-def rename_item(item_id, item_type, new_name):
+def rename_folder(folder_id, new_name):
     if not ensure_connected():
         return False, ""
-    return _call_json(lib.fs_rename_item_json, c_int(item_id), item_type.encode(), new_name.encode())
+    return _call_json(lib.fs_rename_folder_json, c_int(folder_id), new_name.encode())
 
-def list_permissions(target_type, target_id):
+def rename_file(file_id, new_name):
     if not ensure_connected():
         return False, ""
-    return _call_json(lib.fs_list_permissions_json, c_int(target_type), c_int(target_id))
+    return _call_json(lib.fs_rename_file_json, c_int(file_id), new_name.encode())
 
-def update_permission(target_type, target_id, username, permission):
+def list_folder_permissions(folder_id):
     if not ensure_connected():
         return False, ""
-    return _call_json(lib.fs_update_permission_json, c_int(target_type), c_int(target_id), username.encode(), c_int(permission))
+    return _call_json(lib.fs_list_folder_permissions_json, c_int(folder_id))
+
+def list_file_permissions(file_id):
+    if not ensure_connected():
+        return False, ""
+    return _call_json(lib.fs_list_file_permissions_json, c_int(file_id))
+
+def update_folder_permission(folder_id, username, permission):
+    if not ensure_connected():
+        return False, ""
+    return _call_json(lib.fs_update_folder_permission_json, c_int(folder_id), username.encode(), c_int(permission))
+
+def update_file_permission(file_id, username, permission):
+    if not ensure_connected():
+        return False, ""
+    return _call_json(lib.fs_update_file_permission_json, c_int(file_id), username.encode(), c_int(permission))

@@ -1,6 +1,7 @@
 #include "test.h"
 
 #include "api/auth_api.h"
+#include "api/folder_api.h"
 #include "api/file_api.h"
 #include "client.h"
 #include "cJSON.h"
@@ -199,9 +200,9 @@ static void handle_get_me(void) {
 
 static void handle_ping(void) {
     Frame resp = {0};
-    int rc = ping_api(&resp);
+    int rc = send_simple_cmd("PING", &resp);
     if (rc != 0) {
-        fprintf(stderr, "ping_api failed (%d)\n", rc);
+        fprintf(stderr, "ping failed (%d)\n", rc);
         return;
     }
     print_response(&resp);

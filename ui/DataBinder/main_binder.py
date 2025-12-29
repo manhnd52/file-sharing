@@ -54,7 +54,7 @@ class MainBinder:
         items = payload.get("items", [])
         # If at root, append shared folders/files
         if folder_id == self.root_folder_id:
-            ok_shared, resp_shared = fs_client.list_shared_folders()
+            ok_shared, resp_shared = fs_client.list_shared_items()
             if ok_shared:
                 try:
                     shared_payload = json.loads(resp_shared) if resp_shared else {}
@@ -135,8 +135,10 @@ class MainBinder:
     def rename_item(self, item, new_name: str) -> tuple[bool, str]:
         if not item or not new_name:
             return False, "Thiếu thông tin đổi tên"
-        item_type = "folder" if item.get("is_folder") else "file"
-        ok, resp = fs_client.rename_item(item.get("id", 0), item_type, new_name)
+        if item.get("is_folder"):
+            ok, resp = fs_client.rename_folder(item.get("id", 0), new_name)
+        else:
+            ok, resp = fs_client.rename_file(item.get("id", 0), new_name)
         if not ok:
             try:
                 data = json.loads(resp) if resp else {}
