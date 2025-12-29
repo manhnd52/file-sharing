@@ -9,6 +9,7 @@
 #include "services/file_service.h"
 #include "utils/uuid.h"
 #include "cJSON.h"
+#include <inttypes.h>
 
 DownloadSession dss[MAX_SESSION];
 
@@ -200,8 +201,12 @@ void download_init_handler(Conn *c, Frame *f) {
     // Respond with RES including sessionId
     char uuid_str[37];
     bytes_to_uuid_string(sid, uuid_str);
-    char payload[128];
-    snprintf(payload, sizeof(payload), "{\"sessionId\": \"%s\", \"file_name\": \"%s\", \"file_size\": %llu, \"chunk_size\": %u}", uuid_str, file_name, (unsigned long long)file_size, chunk_size);
+    char payload[524];
+    snprintf(payload, sizeof(payload),
+         "{\"sessionId\": \"%s\", \"file_name\": \"%s\", \"file_size\": %" PRIu64 ", \"chunk_size\": %" PRIu32 "}",
+         uuid_str, file_name,
+         (uint64_t)file_size,
+         (uint32_t)chunk_size);
     Frame ok;
     build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK, payload);
     send_frame(c->sockfd, &ok);
