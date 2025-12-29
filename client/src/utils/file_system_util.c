@@ -86,7 +86,7 @@ char* create_unique_filepath(const char *filepath) {
 
     // tách phần thư mục và tên file
     char dir[1024] = "";
-    char filename[1024] = "";
+    char filename[252] = "";
     char *last_sep = strrchr(dup, '/');
 
     if (last_sep) {
@@ -125,4 +125,31 @@ char* create_unique_filepath(const char *filepath) {
     }
 
     return strdup(final_path); // trả về caller, caller free
+}
+
+// Ensure the target directory exists, make new folder if needed
+bool ensure_directory(const char* path) {
+    if (!path || path[0] == '\0') {
+        return false;
+    }
+    return mkdirs(path) == 0;
+}
+
+// Build a child path by joining base and component with a separator as needed.
+// Component is file or folder name
+bool join_path(char* out, size_t out_size, const char* base,
+                      const char* component) {
+    if (!out || out_size == 0 || !base || !component || component[0] == '\0') {
+        return false;
+    }
+    size_t base_len = strlen(base);
+    bool has_sep = base_len > 0 &&
+                   (base[base_len - 1] == '/' || base[base_len - 1] == '\\');
+    int written = has_sep
+                      ? snprintf(out, out_size, "%s%s", base, component)
+                      : snprintf(out, out_size, "%s/%s", base, component);
+    if (written < 0 || (size_t)written >= out_size) {
+        return false;
+    }
+    return true;
 }
