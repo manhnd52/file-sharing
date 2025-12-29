@@ -12,7 +12,9 @@ class MainWindow(QMainWindow):
     request_share = pyqtSignal(object)
     request_create_folder = pyqtSignal()
     request_upload_file = pyqtSignal()
+    request_upload_folder = pyqtSignal()
     request_open_folder = pyqtSignal(int)
+    request_download = pyqtSignal(object)
     request_home = pyqtSignal()
     request_back = pyqtSignal()
     request_delete = pyqtSignal(object)
@@ -137,6 +139,7 @@ class MainWindow(QMainWindow):
         share = QAction("Chia sẻ", self)
         delete = QAction("Xóa", self)
 
+        download.triggered.connect(lambda: self.request_download.emit(data))
         menu.addAction(download)
         rename.setEnabled(can_write)
         rename.triggered.connect(lambda: self.request_rename.emit(data))
@@ -156,10 +159,13 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         create_folder = QAction("Tạo thư mục mới", self)
         upload_file = QAction("Tải lên tệp", self)
+        upload_folder = QAction("Tải lên thư muc", self)
         create_folder.triggered.connect(self.request_create_folder.emit)
         upload_file.triggered.connect(self.request_upload_file.emit)
+        upload_folder.triggered.connect(self.request_upload_folder.emit)
         menu.addAction(create_folder)
         menu.addAction(upload_file)
+        menu.addAction(upload_folder)
         menu.exec_(self.cursor().pos())
 
     def _on_double_click(self, item):

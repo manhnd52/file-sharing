@@ -93,5 +93,9 @@ int download_folder_api(const char* storage_path, int folder_id, Frame* res) {
     }
 
     cJSON_Delete(payload_json);
+    if (res && res->msg_type == 0) {
+        // Nếu chưa có phản hồi nào từ server (folder rỗng), tạo frame OK giả
+        build_respond_frame(res, 0, STATUS_OK, "{}");
+    }
     return 0;
 }

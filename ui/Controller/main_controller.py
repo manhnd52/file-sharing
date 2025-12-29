@@ -13,11 +13,13 @@ class MainController:
         self.view.request_share.connect(self.on_share)
         self.view.request_create_folder.connect(self.on_create_folder)
         self.view.request_upload_file.connect(self.on_upload_file)
+        self.view.request_upload_folder.connect(self.on_upload_folder)
         self.view.request_open_folder.connect(self.on_open_folder)
         self.view.request_home.connect(self.on_home)
         self.view.request_back.connect(self.on_back)
         self.view.request_delete.connect(self.on_delete_item)
         self.view.request_rename.connect(self.on_rename_item)
+        self.view.request_download.connect(self.on_download_item)
 
         self.load()
         self._update_nav_buttons()
@@ -49,7 +51,21 @@ class MainController:
                 QMessageBox.warning(self.view, "Tạo thư mục", msg)
 
     def on_upload_file(self):
-        QMessageBox.information(self.view, "Tải lên", "Chức năng tải lên chưa được triển khai trong UI.")
+        success, msg = self.main_binder.upload_file()
+        if success:
+            QMessageBox.information(self.view, "Tải lên file", msg)
+            self.load()
+        elif msg:
+            QMessageBox.warning(self.view, "Tải lên file", msg)
+
+    def on_upload_folder(self):
+        success, msg = self.main_binder.upload_folder()
+        if success:
+            QMessageBox.information(self.view, "Tải lên thư mục", msg)
+            self.load()
+        elif msg:
+            QMessageBox.warning(self.view, "Tải lên thư mục", msg or "Tải lên thư mục thất bại")
+
 
     def on_open_folder(self, folder_id: int):
         data = self.main_binder.load_data(folder_id, push_to_stack=True)
@@ -86,6 +102,13 @@ class MainController:
                 self.load()
             else:
                 QMessageBox.warning(self.view, "Đổi tên", msg)
+
+    def on_download_item(self, item):
+        success, msg = self.main_binder.download_item(item)
+        if success:
+            QMessageBox.information(self.view, "Tải xuống", msg)
+        else:
+            QMessageBox.warning(self.view, "Tải xuống", msg or "Tải xuống thất bại")
 
     def _update_nav_buttons(self):
         self.view.set_back_enabled(len(self.main_binder.parent_stack) > 0)

@@ -8,6 +8,8 @@
 #include "api/folder_api.h"
 #include "api/file_api.h"
 #include "api/permission_api.h"
+#include "api/upload_api.h"
+#include "api/download_api.h"
 
 static int copy_payload(Frame *res, char *out_buf, size_t out_len) {
     if (!out_buf || out_len == 0) return -1;
@@ -131,5 +133,23 @@ int fs_update_file_permission_json(int file_id, const char *username, int permis
                               char *out_buf, size_t out_len) {
     Frame res = {0};
     int rc = update_file_permission_api(file_id, username, permission, &res);
+    return handle_cmd_frame(rc, &res, out_buf, out_len);
+}
+
+int fs_upload_file_json(const char *file_path, int parent_folder_id, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = upload_file_api(file_path, parent_folder_id, &res);
+    return handle_cmd_frame(rc, &res, out_buf, out_len);
+}
+
+int fs_download_file_json(const char *dest_dir, int file_id, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = download_file_api(dest_dir, file_id, &res);
+    return handle_cmd_frame(rc, &res, out_buf, out_len);
+}
+
+int fs_download_folder_json(const char *dest_dir, int folder_id, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = download_folder_api(dest_dir, folder_id, &res);
     return handle_cmd_frame(rc, &res, out_buf, out_len);
 }

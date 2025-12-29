@@ -61,6 +61,12 @@ lib.fs_update_folder_permission_json.argtypes = [c_int, c_char_p, c_int, c_char_
 lib.fs_update_folder_permission_json.restype = c_int
 lib.fs_update_file_permission_json.argtypes = [c_int, c_char_p, c_int, c_char_p, c_size_t]
 lib.fs_update_file_permission_json.restype = c_int
+lib.fs_upload_file_json.argtypes = [c_char_p, c_int, c_char_p, c_size_t]
+lib.fs_upload_file_json.restype = c_int
+lib.fs_download_file_json.argtypes = [c_char_p, c_int, c_char_p, c_size_t]
+lib.fs_download_file_json.restype = c_int
+lib.fs_download_folder_json.argtypes = [c_char_p, c_int, c_char_p, c_size_t]
+lib.fs_download_folder_json.restype = c_int
 
 _connected = False
 
@@ -151,3 +157,18 @@ def update_file_permission(file_id, username, permission):
     if not ensure_connected():
         return False, ""
     return _call_json(lib.fs_update_file_permission_json, c_int(file_id), username.encode(), c_int(permission))
+
+def upload_file(file_path, parent_folder_id):
+    if not ensure_connected():
+        return False, ""
+    return _call_json(lib.fs_upload_file_json, file_path.encode(), c_int(parent_folder_id))
+
+def download_file(dest_dir, file_id):
+    if not ensure_connected():
+        return False, ""
+    return _call_json(lib.fs_download_file_json, dest_dir.encode(), c_int(file_id))
+
+def download_folder(dest_dir, folder_id):
+    if not ensure_connected():
+        return False, ""
+    return _call_json(lib.fs_download_folder_json, dest_dir.encode(), c_int(folder_id))

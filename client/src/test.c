@@ -181,7 +181,7 @@ static void handle_auth(void) {
 
 static void handle_logout(void) {
     Frame resp = {0};
-    int rc = logout_api(g_conn, &resp);
+    int rc = logout_api(&resp);
     if (rc != 0) {
         fprintf(stderr, "logout_api failed (%d)\n", rc);
         return;

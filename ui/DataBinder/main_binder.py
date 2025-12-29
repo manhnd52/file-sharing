@@ -1,6 +1,7 @@
 import json
+import os
 
-from PyQt5.QtWidgets import QStyle
+from PyQt5.QtWidgets import QStyle, QFileDialog
 
 from clients import fs_client
 
@@ -146,3 +147,87 @@ class MainBinder:
             except json.JSONDecodeError:
                 return False, "Đổi tên thất bại"
         return True, "Đổi tên thành công"
+
+    def upload_file(self) -> tuple[bool, str]:
+        path, _ = QFileDialog.getOpenFileName(None, "Chọn tệp để tải lên")
+        if not path:
+            return False, ""
+        ok, resp = fs_client.upload_file(path, self.current_folder_id)
+        if not ok:
+            try:
+                data = json.loads(resp) if resp else {}
+                return False, data.get("error", "Tải lên thất bại")
+            except json.JSONDecodeError:
+                return False, "Tải lên thất bại"
+        return True, "Tải lên thành công"
+
+    def _ensure_subfolder(self, parent_id: int, name: str) -> int:
+        ok, resp = fs_client.list_folder(parent_id)
+        if ok:
+            try:
+                payload = json.loads(resp) if resp else {}
+                for item in payload.get("items", []):
+                    if item.get("type") == "folder" and item.get("name") == name:
+                        return int(item.get("id", 0))
+            except json.JSONDecodeError:
+                pass
+        ok, resp = fs_client.mkdir(parent_id, name)
+        if not ok:
+            return 0
+        try:
+            payload = json.loads(resp) if resp else {}
+            return int(payload.get("id", 0))
+        except json.JSONDecodeError:
+            return 0
+
+    def upload_folder(self) -> tuple[bool, str]:
+        root_dir = QFileDialog.getExistingDirectory(None, "Chọn thư mục để tải lên")
+        if not root_dir:
+            return False, ""
+        root_name = os.path.basename(root_dir.rstrip(os.sep))
+        if not root_name:
+            return False, "Không xác định được tên thư mục gốc"
+        dest_root_id = self._ensure_subfolder(self.current_folder_id, root_name)
+        if dest_root_id <= 0:
+            return False, f"Tạo thư mục {root_name} thất bại"
+
+        folder_map = {root_dir: dest_root_id}
+        for current_path, dirs, files in os.walk(root_dir):
+            parent_id = folder_map.get(current_path)
+            if not parent_id:
+                return False, f"Không tìm được thư mục đích cho {current_path}"
+            for d in dirs:
+                target_id = self._ensure_subfolder(parent_id, d)
+                if target_id <= 0:
+                    return False, f"Tạo thư mục {d} thất bại"
+                folder_map[os.path.join(current_path, d)] = target_id
+            for f in files:
+                full_path = os.path.join(current_path, f)
+                ok, resp = fs_client.upload_file(full_path, parent_id)
+                if not ok:
+                    try:
+                        data = json.loads(resp) if resp else {}
+                        return False, data.get("error", f"Tải lên {f} thất bại")
+                    except json.JSONDecodeError:
+                        return False, f"Tải lên {f} thất bại"
+        return True, "Tải thư mục thành công"
+
+    def download_item(self, item) -> tuple[bool, str]:
+        if not item or not item.get("id"):
+            return False, "Không có mục để tải xuống"
+        is_folder = item.get("is_folder")
+        title = "Chọn thư mục lưu"
+        dest_dir = QFileDialog.getExistingDirectory(None, title)
+        if not dest_dir:
+            return False, ""
+        if is_folder:
+            ok, resp = fs_client.download_folder(dest_dir, item.get("id"))
+        else:
+            ok, resp = fs_client.download_file(dest_dir, item.get("id"))
+        if not ok:
+            try:
+                data = json.loads(resp) if resp else {}
+                return False, data.get("error", "Tải xuống thất bại")
+            except json.JSONDecodeError:
+                return False, "Tải xuống thất bại"
+        return True, "Tải xuống thành công"
