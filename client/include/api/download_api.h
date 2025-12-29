@@ -3,6 +3,6 @@
 
 #include "frame.h"
 
-int download_file_api(const char* storage_path, int folder_id, Frame* res);
+int download_file_api(const char* storage_path, int file_id, Frame* res);
 
 #endif

@@ -70,12 +70,12 @@ static int sent_download_finish_cmd(const char* session_id, Frame* res) {
     return rc;
 }
 
-int download_file_api(const char* storage_path, int folder_id, Frame* res) {
-    if (!storage_path || storage_path[0] == '\0' || folder_id <= 0 || !res) {
+int download_file_api(const char* storage_path, int file_id, Frame* res) {
+    if (!storage_path || storage_path[0] == '\0' || file_id <= 0 || !res) {
         return -1;
     }
 
-    int rc = sent_download_init_cmd(folder_id, res);
+    int rc = sent_download_init_cmd(file_id, res);
     if (rc != 0) {
         return rc;
     }
@@ -140,7 +140,15 @@ int download_file_api(const char* storage_path, int folder_id, Frame* res) {
         snprintf(target_path, sizeof(target_path), "%s/%s", storage_path, file_name);
     }
 
-    FILE *fp = fopen_mkdir(target_path, "wb");
+    char *tmp = create_unique_filepath(target_path);
+    if (tmp) {
+        strncpy(target_path, tmp, sizeof(target_path)-1);
+        target_path[sizeof(target_path)-1] = '\0';
+        free(tmp);
+    }
+
+    FILE* fp = fopen(target_path, "wb");
+    
     if (!fp) {
         return -1;
     }

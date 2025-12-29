@@ -6,6 +6,6 @@
 
 void extract_file_name(const char *path, char *out, size_t out_size);
 uint64_t get_file_size(const char *file_path);
-FILE* fopen_mkdir(const char *filepath, const char *mode);
+char* create_unique_filepath(const char *filepath);
 int mkdirs(const char *path);
 #endif

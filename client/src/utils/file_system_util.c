@@ -77,40 +77,52 @@ int mkdirs(const char *path) {
     return 0;
 }
 
-// Hàm mở file, tự tạo thư mục nếu cần
-FILE* fopen_mkdir(const char *filepath, const char *mode) {
+// Hàm tạo filepath nếu chưa có folder trên path, và tránh trùng lặp
+char* create_unique_filepath(const char *filepath) {
+    if (!filepath) return NULL;
+
     char *dup = strdup(filepath);
     if (!dup) return NULL;
 
-    // tách phần thư mục
-    char *last_sep = strrchr(dup, '/');
+    // tách phần thư mục và tên file
     char dir[1024] = "";
     char filename[1024] = "";
+    char *last_sep = strrchr(dup, '/');
+
     if (last_sep) {
         *last_sep = 0;
-        strcpy(dir, dup);               // phần thư mục
-        strcpy(filename, last_sep + 1); // tên file
+        strncpy(dir, dup, sizeof(dir)-1);
+        dir[sizeof(dir)-1] = '\0';
+        strncpy(filename, last_sep + 1, sizeof(filename)-1);
+        filename[sizeof(filename)-1] = '\0';
+
         if (mkdirs(dir) != 0) {
             free(dup);
             return NULL;
         }
     } else {
-        strcpy(filename, dup); // không có thư mục
+        strncpy(filename, dup, sizeof(filename)-1);
+        filename[sizeof(filename)-1] = '\0';
     }
 
     free(dup);
 
-    // kiểm tra file tồn tại, thêm _new trước phần mở rộng
+    // build final path
     char final_path[2048];
     snprintf(final_path, sizeof(final_path), "%s%s%s",
              dir[0] ? dir : "", dir[0] ? "/" : "", filename);
 
+    // thêm "new_" nếu file tồn tại
     while (access(final_path, F_OK) == 0) {
         char new_file_name[256];
         snprintf(new_file_name, sizeof(new_file_name), "new_%s", filename);
         snprintf(final_path, sizeof(final_path), "%s%s%s",
                  dir[0] ? dir : "", dir[0] ? "/" : "", new_file_name);
+
+        // update filename cho vòng while tiếp theo
+        strncpy(filename, new_file_name, sizeof(filename)-1);
+        filename[sizeof(filename)-1] = '\0';
     }
 
-    return fopen(final_path, mode);
+    return strdup(final_path); // trả về caller, caller free
 }

@@ -74,7 +74,7 @@ void upload_handler(Conn *c, Frame *data) {
 	}
 
 	// Update session metadata
-	if (chunk_index == us->last_received_chunk + 1 && us->chunk_length >= chunk_length) {
+	if (chunk_index == us->last_received_chunk + 1 && us->chunk_size >= chunk_length) {
 		us->last_received_chunk = chunk_index;
 	} else {
 		Frame err_frame;
@@ -102,7 +102,7 @@ void upload_handler(Conn *c, Frame *data) {
 		return;
 	}
 
-	off_t offset = ((off_t)chunk_index - 1) * (off_t)us->chunk_length;
+	off_t offset = ((off_t)chunk_index - 1) * (off_t)us->chunk_size;
 	ssize_t write_num = pwrite(fd, data->payload, data->payload_len, offset);
 	if (write_num < 0 || (size_t)write_num != data->payload_len) {
 		Frame err_frame;
@@ -164,7 +164,7 @@ void upload_init_handler(Conn *c, Frame *f) {
 		return;
 	}
 
-	uint32_t chunk_length = (uint32_t)chunkSizeItem->valuedouble;
+	uint32_t chunk_size = (uint32_t)chunkSizeItem->valuedouble;
 	const char *file_name = fileName->valuestring;
 	int parent_folder_id = parentFolderIdItem->valueint;
 	uint64_t file_size = (uint64_t)fileSizeItem->valuedouble;
@@ -194,7 +194,7 @@ void upload_init_handler(Conn *c, Frame *f) {
 			snprintf(ss[i].uuid_str, sizeof(ss[i].uuid_str), "%s", uuid_str);
 			ss[i].parent_folder_id = parent_folder_id;
 			ss[i].last_received_chunk = 0;
-			ss[i].chunk_length = chunk_length;
+			ss[i].chunk_size = chunk_size;
 			ss[i].total_received_size = 0;
 			ss[i].expected_file_size = file_size;
 			us = &ss[i];
