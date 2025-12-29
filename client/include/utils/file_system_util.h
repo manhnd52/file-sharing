@@ -6,10 +6,13 @@
 #include <stdbool.h>
 
 void extract_file_name(const char *path, char *out, size_t out_size);
+bool extract_folder_name(const char *path, char *out_name, size_t out_size);
 uint64_t get_file_size(const char *file_path);
 char* create_unique_filepath(const char *filepath);
 int mkdirs(const char *path);
 bool ensure_directory(const char* path);
 bool join_path(char* out, size_t out_size, const char* base,
                       const char* component);
+bool is_dot_or_dotdot(const char *name);
+
 #endif

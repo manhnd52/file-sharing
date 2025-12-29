@@ -31,6 +31,34 @@ void extract_file_name(const char *path, char *out, size_t out_size) {
     out[len] = '\0';
 }
 
+bool extract_folder_name(const char *path, char *out_name, size_t out_size) {
+    if (!path || !out_name || out_size == 0) {
+        return false;
+    }
+
+    size_t len = strlen(path);
+    while (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\')) {
+        --len;
+    }
+
+    if (len == 0) {
+        return false;
+    }
+
+    const char *start = path + len - 1;
+    while (start > path && *(start - 1) != '/' && *(start - 1) != '\\') {
+        --start;
+    }
+
+    size_t name_len = (size_t)(path + len - start);
+    if (name_len >= out_size) {
+        name_len = out_size - 1;
+    }
+
+    memcpy(out_name, start, name_len);
+    out_name[name_len] = '\0';
+    return name_len > 0;
+}
 
 uint64_t get_file_size(const char *file_path) {
     FILE *fp = fopen(file_path, "rb");
@@ -152,4 +180,8 @@ bool join_path(char* out, size_t out_size, const char* base,
         return false;
     }
     return true;
+}
+
+bool is_dot_or_dotdot(const char *name) {
+    return name && (strcmp(name, ".") == 0 || strcmp(name, "..") == 0);
 }
