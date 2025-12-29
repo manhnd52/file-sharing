@@ -232,15 +232,14 @@ cJSON* get_folder_info(int folder_id) {
     int owner_id = sqlite3_column_int(stmt, 2);
     int user_root = sqlite3_column_int(stmt, 3);
 
-    sqlite3_finalize(stmt);
-
     cJSON* info = cJSON_CreateObject();
     cJSON_AddNumberToObject(info, "folder_id", folder_id);
     cJSON_AddNumberToObject(info, "parent_id", parent_id);
     cJSON_AddStringToObject(info, "folder_name", name ? (const char*)name : "");
     cJSON_AddNumberToObject(info, "owner_id", owner_id);
     cJSON_AddBoolToObject(info, "user_root", user_root != 0);
-
+    sqlite3_finalize(stmt);
+    
     cJSON* items = cJSON_CreateArray();
     cJSON_AddItemToObject(info, "items", items);
 
