@@ -155,7 +155,7 @@ class MainWindow(QMainWindow):
     def _show_empty_context_menu(self):
         menu = QMenu(self)
         create_folder = QAction("Tạo thư mục mới", self)
-        upload_file = QAction("Tải lên tệp...", self)
+        upload_file = QAction("Tải lên tệp", self)
         create_folder.triggered.connect(self.request_create_folder.emit)
         upload_file.triggered.connect(self.request_upload_file.emit)
         menu.addAction(create_folder)
