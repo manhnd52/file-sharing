@@ -1,5 +1,5 @@
 // File này chứa các hàm kiểm tra cấp quyền truy cập thư mục, file cho user
-#include "services/authorize_service.h"
+#include "services/permission_service.h"
 #include "database.h"
 #include <sqlite3.h>
 #include <stdio.h>

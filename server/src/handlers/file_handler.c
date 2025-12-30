@@ -2,7 +2,7 @@
 #include "cJSON.h"
 #include "database.h"
 #include "services/file_service.h"
-#include "services/authorize_service.h"
+#include "services/permission_service.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -48,10 +48,11 @@ void handle_cmd_delete_file(Conn *c, Frame *f, const char *cmd) {
     cJSON_Delete(root);
 
     PermissionLevel perm = get_file_permission(c->user_id, file_id);
+    
     if (perm < PERM_WRITE) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"not_authorized\"}");
+                            "{\"error\":\"forbidden\"}");
         send_data(c, resp);
         return;
     }

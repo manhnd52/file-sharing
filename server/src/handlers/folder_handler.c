@@ -4,7 +4,7 @@
 #include "database.h"
 #include "services/folder_service.h"
 #include "services/item_service.h"
-#include "services/authorize_service.h"
+#include "services/permission_service.h"
 #include <sqlite3.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,14 +14,6 @@
 void handle_cmd_list_shared_folders(Conn *c, Frame *f, const char *cmd) {
     (void)cmd;
     printf("[CMD:LIST_SHARED_ITEMS][INFO] user_id=%d\n", c->user_id);
-
-    if (!db_global || c->user_id <= 0) {
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"not_authenticated\"}");
-        send_data(c, resp);
-        return;
-    }
 
     cJSON *root = list_shared_items(c->user_id);
     if (!root) {
@@ -43,14 +35,6 @@ void handle_cmd_list_shared_folders(Conn *c, Frame *f, const char *cmd) {
 
 void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
     (void)cmd;
-
-    if (!db_global || !c->logged_in) {
-        Frame resp;
-        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"not_authenticated\"}");
-        send_data(c, resp);
-        return;
-    }
 
     int folder_id = 0;
 
@@ -76,7 +60,7 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
     if (!authorize_folder_access(c->user_id, folder_id, PERM_READ)) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\":\"not_authorized\"}");
+                            "{\"error\":\"forbidden\"}");
         send_data(c, resp);
         return;
     }

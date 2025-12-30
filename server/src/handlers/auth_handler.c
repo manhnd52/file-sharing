@@ -253,9 +253,11 @@ void handle_auth_token(Conn *c, Frame *f, const char *cmd) {
     c->auth_token[sizeof(c->auth_token) - 1] = '\0';
 
     char payload[512];
+    int root_folder_id = folder_get_or_create_user_root(user_id);
+
     snprintf(payload, sizeof(payload),
-             "{\"success\":true,\"user_id\":%d,\"username\":\"%s\",\"token\":\"%s\"}",
-             user.id, user.username, token);
+             "{\"success\":true,\"user_id\":%d,\"username\":\"%s\",\"root_folder_id\":%d,\"token\":\"%s\"}",
+             user.id, user.username, root_folder_id, token);
 
     Frame resp;
     build_respond_frame(&resp, request_id, STATUS_OK, payload);

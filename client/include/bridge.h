@@ -14,6 +14,8 @@ int fs_login_json(const char *username, const char *password,
 
 int fs_register_json(const char *username, const char *password,
                      char *out_buf, size_t out_len);
+int fs_auth_json(const char *token, char *out_buf, size_t out_len);
+int fs_logout_json(char *out_buf, size_t out_len);
 
 int fs_list_json(int folder_id, char *out_buf, size_t out_len);
 int fs_list_shared_items_json(char *out_buf, size_t out_len);

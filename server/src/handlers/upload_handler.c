@@ -7,6 +7,8 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "services/permission_service.h"
+
 UploadSession ss[MAX_SESSION];
 
 static void respond_upload_finish_error(Conn *c, Frame *f, const char *payload) {
@@ -146,6 +148,7 @@ Handler for UPLOAD_INIT command to start a new upload session when receiving CMD
 void upload_init_handler(Conn *c, Frame *f) {
 	if (!c || !f) return;
 
+	
 	// Expect JSON payload { cmd: "UPLOAD_INIT", path: string, file_size: number, chunk_size: number }
 	cJSON *root = cJSON_Parse((const char *)f->payload);
 	cJSON *cmd = cJSON_GetObjectItemCaseSensitive(root, "cmd");
@@ -168,7 +171,15 @@ void upload_init_handler(Conn *c, Frame *f) {
 	const char *file_name = fileName->valuestring;
 	int parent_folder_id = parentFolderIdItem->valueint;
 	uint64_t file_size = (uint64_t)fileSizeItem->valuedouble;
-
+	
+	if (!authorize_folder_access(c->user_id, parent_folder_id, PERM_WRITE)) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"forbidden\"}");
+        send_data(c, resp);
+        return;
+    }
+	
 	uint8_t sid[BYTE_UUID_SIZE];
 
 	generate_byte_uuid(sid);

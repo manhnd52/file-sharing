@@ -6,10 +6,12 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include "services/file_service.h"
 #include "utils/uuid.h"
 #include "cJSON.h"
 #include <inttypes.h>
+
+#include "services/file_service.h"
+#include "services/permission_service.h"
 
 DownloadSession dss[MAX_SESSION];
 
@@ -163,6 +165,14 @@ void download_init_handler(Conn *c, Frame *f) {
         return;
     } 
     
+    if (!authorize_file_access(c->user_id, file_id, PERM_READ)) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"forbidden\"}");
+        send_data(c, resp);
+        return;
+    }
+
     uint64_t file_size = (uint64_t)cJSON_GetObjectItemCaseSensitive(fi, "file_size")->valuedouble;
     char storage_hash[37];
     strncpy(storage_hash, cJSON_GetObjectItemCaseSensitive(fi, "storage_hash")->valuestring, sizeof(storage_hash) - 1);

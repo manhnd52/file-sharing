@@ -34,6 +34,10 @@ lib.fs_login_json.argtypes = [c_char_p, c_char_p, c_char_p, c_size_t]
 lib.fs_login_json.restype = c_int
 lib.fs_register_json.argtypes = [c_char_p, c_char_p, c_char_p, c_size_t]
 lib.fs_register_json.restype = c_int
+lib.fs_auth_json.argtypes = [c_char_p, c_char_p, c_size_t]
+lib.fs_auth_json.restype = c_int
+lib.fs_logout_json.argtypes = [c_char_p, c_size_t]
+lib.fs_logout_json.restype = c_int
 
 lib.fs_list_json.argtypes = [c_int, c_char_p, c_size_t]
 lib.fs_list_json.restype = c_int
@@ -92,6 +96,16 @@ def register(username, password, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=D
     if not ensure_connected(host, port, timeout):
         return False, ""
     return _call_json(lib.fs_register_json, username.encode(), password.encode())
+
+def auth(token, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT):
+    if not ensure_connected(host, port, timeout):
+        return False, ""
+    return _call_json(lib.fs_auth_json, token.encode())
+
+def logout():
+    if not ensure_connected():
+        return False, ""
+    return _call_json(lib.fs_logout_json)
 
 def list_folder(folder_id=1):
     if not ensure_connected():

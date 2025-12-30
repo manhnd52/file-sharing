@@ -52,6 +52,18 @@ int fs_register_json(const char *username, const char *password,
     return handle_cmd_frame(rc, &res, out_buf, out_len);
 }
 
+int fs_auth_json(const char *token, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = auth_api(token, &res);
+    return handle_cmd_frame(rc, &res, out_buf, out_len);
+}
+
+int fs_logout_json(char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = logout_api(&res);
+    return handle_cmd_frame(rc, &res, out_buf, out_len);
+}
+
 int fs_list_json(int folder_id, char *out_buf, size_t out_len) {
     Frame res = {0};
     int rc = list_api(folder_id, &res);

@@ -1,5 +1,5 @@
 #include "services/item_service.h"
-#include "services/authorize_service.h"
+#include "services/permission_service.h"
 #include "database.h"
 #include <sqlite3.h>
 #include <string.h>
