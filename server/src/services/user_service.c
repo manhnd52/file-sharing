@@ -204,6 +204,17 @@ bool user_verify_token(const char* token, int* user_id_out) {
     }
 
     sqlite3_finalize(stmt);
+
+    if (!valid) {
+        const char* sql_delete = "DELETE FROM sessions WHERE token = ? OR expires_at <= datetime('now')";
+        sqlite3_stmt* del_stmt = NULL;
+        if (sqlite3_prepare_v2(db_global, sql_delete, -1, &del_stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(del_stmt, 1, token, -1, SQLITE_STATIC);
+            sqlite3_step(del_stmt);
+        }
+        sqlite3_finalize(del_stmt);
+    }
+
     return valid;
 }
 

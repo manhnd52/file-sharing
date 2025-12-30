@@ -20,6 +20,7 @@ class MainController:
         self.view.request_delete.connect(self.on_delete_item)
         self.view.request_rename.connect(self.on_rename_item)
         self.view.request_download.connect(self.on_download_item)
+        self.view.request_search.connect(self.on_search)
 
         self.load()
         self._update_nav_buttons()
@@ -113,3 +114,7 @@ class MainController:
     def _update_nav_buttons(self):
         self.view.set_back_enabled(len(self.main_binder.parent_stack) > 0)
         self.view.set_home_enabled(self.main_binder.current_folder_id != self.main_binder.root_folder_id)
+
+    def on_search(self, keyword: str):
+        filtered = self.main_binder.search(keyword)
+        self.view.set_table_data(filtered)

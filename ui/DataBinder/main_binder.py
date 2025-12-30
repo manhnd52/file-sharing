@@ -13,6 +13,7 @@ class MainBinder:
         self.current_folder_id = root_folder_id or 1
         self.root_folder_id = root_folder_id or 1
         self.parent_stack = []
+        self._last_data = []
 
     def _format_size(self, size):
         if size is None:
@@ -94,6 +95,7 @@ class MainBinder:
                 "is_shared": is_shared,
                 "permission": perm_val,
             })
+        self._last_data = data
         return data
 
     def go_back(self):
@@ -105,6 +107,12 @@ class MainBinder:
         self.parent_stack = []
         self.current_folder_id = self.root_folder_id
         return self.load_data(self.root_folder_id, reset_stack=True, push_to_stack=False)
+
+    def search(self, keyword: str):
+        if not keyword:
+            return list(self._last_data)
+        kw = keyword.lower()
+        return [item for item in self._last_data if kw in item.get("name", "").lower()]
 
     def create_folder(self, name: str) -> tuple[bool, str]:
         if not name:
