@@ -85,4 +85,6 @@ int recv_frame(int sockfd, Frame *f);
 
 // --- Utils ---
 int print_frame(Frame *f);
+int is_null_frame(Frame *f);
+
 #endif

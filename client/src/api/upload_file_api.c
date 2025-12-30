@@ -50,11 +50,9 @@ static int sent_upload_chunk_cmd(const uint8_t session_id[SESSIONID_SIZE],
         return -1;
     }
     printf("SENT DATA: \n");
-    print_frame(&frame);
     int rc = connect_send_request(g_conn, &frame, resp);
     printf("RCV ACK DATA: \n");
 
-    print_frame(resp);
     
     if (resp->msg_type != MSG_RESPOND || resp->header.resp.status != STATUS_OK) {
         rc = -1;

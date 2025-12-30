@@ -178,7 +178,6 @@ int download_file_api(const char* storage_path, int file_id, Frame* res) {
     }
 
     rc = sent_download_finish_cmd(session_id, res);
-    print_frame(res);
     
     if (rc != 0) {
         goto cleanup;

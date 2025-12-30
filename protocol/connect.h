@@ -6,6 +6,12 @@
 #include "frame.h"
 #include <time.h>
 
+typedef enum {
+    REQ_OK = 0,          // đã nhận response
+    REQ_ERROR = -1,      // lỗi client-side chung
+    REQ_NO_RESP = -2,    // quá timeout khi gửi/nhận, server disconnected → ko có phản hồi
+} RequestResult;
+
 typedef struct Connect {
     int sockfd;
     uint32_t request_counter;
@@ -16,6 +22,6 @@ typedef struct Connect {
 
 Connect* connect_create(const char *host, uint16_t port, int timeout_seconds);
 void connect_destroy(Connect *c);
-int connect_send_request(Connect *c, Frame *f, Frame *resp);
+RequestResult connect_send_request(Connect *c, Frame *f, Frame *resp);
 
 #endif

@@ -9,18 +9,14 @@
 #include "utils/uuid.h"
 #include "services/file_service.h"
 
-#define MAX_SESSION 1024
-
 typedef struct {
-    uint8_t session_id[BYTE_UUID_SIZE];  // session ID để theo dõi phiên download
-    uint32_t last_requested_chunk;       // chunk cuối cùng đã request/nhận
-    uint32_t chunk_size;               // kích thước mỗi chunk
-    uint64_t total_file_size;            // kích thước file dự kiến
-    int file_id;                          // filepath logic
-    char file_hashcode[37];              // UUID string lấy nguồn file trong storage/data
+    uint8_t session_id[BYTE_UUID_SIZE];     // session ID để theo dõi phiên download
+    uint32_t last_requested_chunk;          // chunk cuối cùng đã request/nhận
+    uint32_t chunk_size;                    // kích thước mỗi chunk
+    uint64_t total_file_size;               // kích thước file dự kiến
+    int file_id;                            // downloading file id
+    char file_hashcode[37];                 // UUID string lấy nguồn file trong storage/data
 } DownloadSession;
-
-extern DownloadSession dss[MAX_SESSION];
 
 void download_chunk_handler(Conn *c, Frame *req);
 void download_init_handler(Conn *c, Frame *f);

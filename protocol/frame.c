@@ -166,6 +166,10 @@ int print_frame(Frame *f) {
   return 0;
 }
 
+int is_null_frame(Frame *f) {
+  return !f || (f->msg_type == 0 && f->total_length == 0 && f->payload_len == 0);
+}
+
 int get_request_id(Frame *f) {
   if (!f) return -1;
   switch (f->msg_type) {
@@ -236,19 +240,21 @@ int parse_frame(uint8_t *buf, size_t len, Frame *f) {
 
 // --- I/O Helpers ---
 ssize_t send_all(int sockfd, const void *buf, size_t len) {
-  size_t total = 0;
-  const uint8_t *p = buf;
-  while (total < len) {
-    ssize_t n = send(sockfd, p + total, len - total, 0);
-    if (n < 0) {
-      if (errno == EINTR)
-        continue;
-      perror("send");
-      return -1;
+    size_t total = 0;
+    const char *p = buf;
+    while (total < len) {
+        ssize_t n = send(sockfd, p + total, len - total, 0);
+        if (errno == EPIPE) { 
+          close(sockfd);
+          return -1;
+        } 
+        if (n < 0) {
+          if (errno == EINTR) continue;
+          return -1;   
+        }
+        total += n;
     }
-    total += n;
-  }
-  return total;
+    return total;
 }
 
 ssize_t read_exact(int sockfd, void *buf, size_t len) {
@@ -270,8 +276,11 @@ ssize_t read_exact(int sockfd, void *buf, size_t len) {
 // --- Send Frame ---
 int send_frame(int sockfd, Frame *f) {
   uint32_t net_len = htonl(f->total_length); // convert to network order on send
-  if (send_all(sockfd, &net_len, sizeof(net_len)) != sizeof(net_len))
+  int send_1 = send_all(sockfd, &net_len, sizeof(net_len));
+
+  if (send_1 != sizeof(net_len)) {
     return -1;
+  }
   if (send_all(sockfd, &f->msg_type, sizeof(f->msg_type)) !=
       sizeof(f->msg_type))
     return -1;
@@ -280,26 +289,26 @@ int send_frame(int sockfd, Frame *f) {
   void *header_ptr = NULL;
 
   switch (f->msg_type) {
-  case MSG_CMD:
-    header_size = sizeof(f->header.cmd);
-    header_ptr = &f->header.cmd;
-    f->header.cmd.request_id = htonl(f->header.cmd.request_id);
-    break;
-  case MSG_RESPOND:
-    header_size = sizeof(f->header.resp);
-    header_ptr = &f->header.resp;
-    f->header.resp.request_id = htonl(f->header.resp.request_id);
-    break;
-  case MSG_DATA:
-    header_size = sizeof(f->header.data);
-    header_ptr = &f->header.data;
-    f->header.data.request_id = htonl(f->header.data.request_id);
-    break;
-  case MSG_AUTH:
-    header_size = sizeof(f->header.auth);
-    header_ptr = &f->header.auth;
-    f->header.auth.request_id = htonl(f->header.auth.request_id);
-    break;
+    case MSG_CMD:
+      header_size = sizeof(f->header.cmd);
+      header_ptr = &f->header.cmd;
+      f->header.cmd.request_id = htonl(f->header.cmd.request_id);
+      break;
+    case MSG_RESPOND:
+      header_size = sizeof(f->header.resp);
+      header_ptr = &f->header.resp;
+      f->header.resp.request_id = htonl(f->header.resp.request_id);
+      break;
+    case MSG_DATA:
+      header_size = sizeof(f->header.data);
+      header_ptr = &f->header.data;
+      f->header.data.request_id = htonl(f->header.data.request_id);
+      break;
+    case MSG_AUTH:
+      header_size = sizeof(f->header.auth);
+      header_ptr = &f->header.auth;
+      f->header.auth.request_id = htonl(f->header.auth.request_id);
+      break;
   default:
     return -1;
   }
@@ -341,13 +350,15 @@ int recv_frame(int sockfd, Frame *f) {
     free(buf);
     return -1;
   }
+  printf("Debug complete fix\n");
 
-  if (parse_frame(buf, f->total_length, f) != 0) {
+  if (parse_frame(buf, f->total_length, f) != 0 && is_null_frame(f)) {
     printf("Failed to parse frame\n");
     free(buf);
     return -1;
   }
 
+  printf("Debug complete fix\n");
   free(buf);
   return 0;
 }

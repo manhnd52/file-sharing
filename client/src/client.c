@@ -32,36 +32,33 @@ bool client_is_connected(void) {
 
 int send_cmd(cJSON *json, Frame *res) {
     if (!json || !res || !g_conn) {
-        return -1;
+        return REQ_ERROR;
     }
 
     char *payload = cJSON_PrintUnformatted(json);
     if (!payload) {
-        return -1;
+        return REQ_ERROR;
     }
 
     Frame request = {0};
     int rc = build_cmd_frame(&request, 0, payload);
     if (rc == 0) {
         rc = connect_send_request(g_conn, &request, res);
-        print_frame(&request);
     }
 
     free(payload);
-
-    print_frame(res);
 
     return rc;
 }
 
 int send_simple_cmd(const char *cmd, Frame *resp) {
     if (!cmd || !resp) {
-        return -1;
+        return REQ_ERROR;
     }
 
     cJSON *json = cJSON_CreateObject();
     if (!json) {
-        return -1;
+        return REQ_ERROR;
     }
 
     cJSON_AddStringToObject(json, "cmd", cmd);

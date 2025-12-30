@@ -3,7 +3,7 @@
 #include "cJSON.h"
 
 static int send_json_cmd(cJSON *json, Frame *resp) {
-    if (!json || !resp) return -1;
+    if (!json || !resp) return REQ_ERROR;
     int rc = send_cmd(json, resp);
     cJSON_Delete(json);
     return rc;
@@ -42,4 +42,3 @@ int list_shared_items_api(Frame *resp) {
     cJSON_AddStringToObject(json, "cmd", "LIST_SHARED_ITEMS");
     return send_json_cmd(json, resp);
 }
-

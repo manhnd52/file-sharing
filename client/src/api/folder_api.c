@@ -3,7 +3,7 @@
 #include "cJSON.h"
 
 static int send_json_cmd(cJSON *json, Frame *resp) {
-    if (!json || !resp) return -1;
+    if (!json || !resp) return REQ_ERROR;
     int rc = send_cmd(json, resp);
     cJSON_Delete(json);
     return rc;

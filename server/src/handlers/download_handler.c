@@ -11,26 +11,14 @@
 #include <inttypes.h>
 
 #include "services/file_service.h"
+#include "services/download_session_service.h"
 #include "services/permission_service.h"
-
-DownloadSession dss[MAX_SESSION];
 
 static void respond_download_finish_error(Conn *c, Frame *f, const char *payload) {
     if (!c || !f || !payload) return;
     Frame err_frame;
     build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK, payload);
     send_frame(c->sockfd, &err_frame);
-}
-
-static int find_session(const uint8_t sid[SESSIONID_SIZE], DownloadSession **out) {
-    // find existing
-    for (int i = 0; i < MAX_SESSION; ++i) {
-        if (memcmp(dss[i].session_id, sid, SESSIONID_SIZE) == 0 && dss[i].file_hashcode[0] != '\0') {
-            *out = &dss[i];
-            return 0;
-        }
-    }
-    return -1;
 }
 
 /*
@@ -47,9 +35,8 @@ Respond với DATA frame chứa chunk dữ liệu tương ứng của file.
 void download_chunk_handler(Conn *c, Frame *req) {
     if (!c || !req) return;
 
-
     cJSON *root = cJSON_Parse((const char *)req->payload);
-    if (!root) {   
+    if (!root) {
         respond_download_finish_error(c, req, "{\"error\": \"invalid_json\"}");
         return;
     }
@@ -73,8 +60,8 @@ void download_chunk_handler(Conn *c, Frame *req) {
         return;
     }
 
-    DownloadSession *ds = NULL;
-    if (find_session(session_id, &ds) != 0 || !ds) {
+    DownloadSession ds = {0};
+    if (!ds_get(session_id, &ds)) {
         respond_download_finish_error(c, req, "{\"error\": \"session_not_found\"}");
         cJSON_Delete(root);
         return;
@@ -82,53 +69,60 @@ void download_chunk_handler(Conn *c, Frame *req) {
 
     uint32_t chunk_index = (uint32_t)chunk_index_json->valueint;
     printf("[DOWNLOAD] Requested Chunk index: %d\n", chunk_index);
-    if (chunk_index != ds->last_requested_chunk + 1) {
+    if (chunk_index != ds.last_requested_chunk + 1) {
         respond_download_finish_error(c, req, "{\"error\": \"invalid_chunk_index\"}");
         cJSON_Delete(root);
         return;
     }
-    // Đọc chunk dữ liệu từ file storage
+
+    if (chunk_index == 1) {
+        ds_update_state(session_id, DOWNLOAD_DOWNLOADING);
+    }
+
     char file_path[512];
-    snprintf(file_path, sizeof(file_path), "data/storage/%s", ds->file_hashcode);
+    snprintf(file_path, sizeof(file_path), "data/storage/%s", ds.file_hashcode);
     int fd = open(file_path, O_RDONLY);
     if (fd < 0) {
+        ds_update_state(session_id, DOWNLOAD_FAILED);
         respond_download_finish_error(c, req, "{\"error\": \"failed_to_open_file\"}");
         cJSON_Delete(root);
         return;
     }
 
-    uint64_t offset = (uint64_t)(chunk_index - 1) * (uint64_t)ds->chunk_size;
+    uint64_t offset = (uint64_t)(chunk_index - 1) * (uint64_t)ds.chunk_size;
     if (lseek(fd, offset, SEEK_SET) == (off_t)-1) {
         close(fd);
+        ds_update_state(session_id, DOWNLOAD_FAILED);
         respond_download_finish_error(c, req, "{\"error\": \"failed_to_seek_file\"}");
         cJSON_Delete(root);
         return;
     }
 
-
-    uint8_t *buffer = (uint8_t *)malloc(ds->chunk_size);
+    uint8_t *buffer = (uint8_t *)malloc(ds.chunk_size);
     if (!buffer) {
         close(fd);
+        ds_update_state(session_id, DOWNLOAD_FAILED);
         respond_download_finish_error(c, req, "{\"error\": \"memory_allocation_failed\"}");
         cJSON_Delete(root);
         return;
     }
 
-    ssize_t r = read(fd, buffer, ds->chunk_size);
-
+    ssize_t r = read(fd, buffer, ds.chunk_size);
     if (r <= 0) {
         free(buffer);
         close(fd);
+        ds_update_state(session_id, DOWNLOAD_FAILED);
         respond_download_finish_error(c, req, "{\"error\": \"failed_to_read_file\"}");
         cJSON_Delete(root);
         return;
     }
-    // Gửi DATA frame chứa chunk dữ liệu
+
     Frame data_frame;
     build_data_frame(&data_frame, req->header.cmd.request_id, session_id,
                         chunk_index, (uint32_t)r, buffer);
     send_frame(c->sockfd, &data_frame);
-    ds->last_requested_chunk = chunk_index;
+
+    ds_update_progress(session_id, chunk_index);
 
     close(fd);
     cJSON_Delete(root);
@@ -186,25 +180,12 @@ void download_init_handler(Conn *c, Frame *f) {
     uint8_t sid[BYTE_UUID_SIZE];
     generate_byte_uuid(sid);
 
-    DownloadSession *ds = NULL;
-
-    for (int i = 0; i < MAX_SESSION; ++i) {
-        if (dss[i].file_hashcode[0] == '\0') {
-            memcpy(dss[i].session_id, sid, BYTE_UUID_SIZE);
-            dss[i].last_requested_chunk = 0;
-            dss[i].chunk_size = chunk_size;
-            dss[i].total_file_size = file_size;
-            dss[i].file_id = file_id;
-            strncpy(dss[i].file_hashcode, storage_hash, sizeof(dss[i].file_hashcode) - 1);
-            ds = &dss[i];
-            break;
-        }
-    }
-    if (!ds) {
+    if (!ds_create(sid, (int)chunk_size, file_size, file_id, storage_hash)) {
         Frame err_frame;
         build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
-                            "{\"error\": \"No available session slots\"}");
+                            "{\"error\": \"session_creation_failed\"}");
         send_frame(c->sockfd, &err_frame);
+        cJSON_Delete(root);
         return;
     }
 
@@ -243,16 +224,15 @@ void download_finish_handler(Conn *c, Frame *f) {
         return;
     }
 
-    DownloadSession *ds = NULL;
-    if (find_session(session_id, &ds) != 0 || !ds) {
+    DownloadSession ds = {0};
+    if (!ds_get(session_id, &ds)) {
         respond_download_finish_error(c, f, "{\"error\": \"session_not_found\"}");
         cJSON_Delete(root);
         return;
     }
 
-    // Clear session
-    memset(ds, 0, sizeof(DownloadSession));
-
+    ds_update_state(session_id, DOWNLOAD_COMPLETED);
+    
     // Respond with OK
     Frame ok;
     build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK, "{\"message\": \"download_session_finished\"}");

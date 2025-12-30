@@ -47,11 +47,13 @@ void register_cmd_route(const char *cmd, CMDHandler handler) {
 void router_handle(Conn *c, Frame *req) {
     // AUTH guard: only allow first AUTH per connection
     int request_id = get_request_id(req);
-
+    
     printf("[ROUTER][DEBUG] Received frame: msg_type=%d, request_id=%d (fd=%d, user_id=%d, logged_in=%d)\n", 
            req->msg_type, request_id, c->sockfd, c->user_id, c->logged_in);
     
-           if (req->msg_type == MSG_AUTH) {
+    sleep(10000000); //Debug: delete this after fix
+
+    if (req->msg_type == MSG_AUTH) {
         if (c->logged_in) {
             Frame resp;
             build_respond_frame(&resp, request_id, STATUS_NOT_OK,

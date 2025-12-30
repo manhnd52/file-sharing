@@ -78,6 +78,18 @@ static void print_response(const Frame *resp) {
     }
 }
 
+static bool report_request(const char *label, RequestResult rc) {
+    if (rc == REQ_NO_RESP) {
+        fprintf(stderr, "%s server not response (%d)\n", label, rc);
+        return false;
+    }
+    if (rc != REQ_OK) {
+        fprintf(stderr, "%s failed (%d)\n", label, rc);
+        return false;
+    }
+    return true;
+}
+
 static void update_saved_token(const Frame *resp) {
     char *payload = payload_to_string(resp);
     if (!payload) {
@@ -113,8 +125,7 @@ static void handle_register(void) {
 
     Frame resp = {0};
     int rc = register_api(username, password, &resp);
-    if (rc != 0) {
-        fprintf(stderr, "register_api failed (%d)\n", rc);
+    if (!report_request("register_api", rc)) {
         return;
     }
 
@@ -128,11 +139,12 @@ static void handle_login(void) {
     puts("Login to server:");
     read_line("  username", username, sizeof(username));
     read_line("  password", password, sizeof(password));
-
+    
     Frame resp = {0};
+    puts("***\n");
     int rc = login_api(username, password, &resp);
-    if (rc != 0) {
-        fprintf(stderr, "login_api failed (%d)\n", rc);
+    printf("!!!\n");
+    if (!report_request("login_api", rc)) {
         return;
     }
 
@@ -168,8 +180,7 @@ static void handle_auth(void) {
 
     Frame resp = {0};
     int rc = auth_api(token, &resp);
-    if (rc != 0) {
-        fprintf(stderr, "auth_api failed (%d)\n", rc);
+    if (!report_request("auth_api", rc)) {
         return;
     }
 
@@ -182,8 +193,7 @@ static void handle_auth(void) {
 static void handle_logout(void) {
     Frame resp = {0};
     int rc = logout_api(&resp);
-    if (rc != 0) {
-        fprintf(stderr, "logout_api failed (%d)\n", rc);
+    if (!report_request("logout_api", rc)) {
         return;
     }
     print_response(&resp);
@@ -194,8 +204,7 @@ static void handle_logout(void) {
 static void handle_get_me(void) {
     Frame resp = {0};
     int rc = me_api(&resp);
-    if (rc != 0) {
-        fprintf(stderr, "me_api failed (%d)\n", rc);
+    if (!report_request("me_api", rc)) {
         return;
     }
     print_response(&resp);
@@ -204,8 +213,7 @@ static void handle_get_me(void) {
 static void handle_ping(void) {
     Frame resp = {0};
     int rc = send_simple_cmd("PING", &resp);
-    if (rc != 0) {
-        fprintf(stderr, "ping failed (%d)\n", rc);
+    if (!report_request("ping", rc)) {
         return;
     }
     print_response(&resp);
@@ -229,8 +237,7 @@ static void handle_list(void) {
 
     Frame resp = {0};
     int rc = list_api(folder_id, &resp);
-    if (rc != 0) {
-        fprintf(stderr, "list_api failed (%d)\n", rc);
+    if (!report_request("list_api", rc)) {
         return;
     }
     print_response(&resp);
@@ -269,8 +276,7 @@ static void handle_upload(void) {
 
     Frame resp = {0};
     int rc = upload_file_api(file_path, parent_folder_id, &resp);
-    if (rc != 0) {
-        fprintf(stderr, "upload_file_api failed (%d)\n", rc);
+    if (!report_request("upload_file_api", rc)) {
         return;
     }
     print_response(&resp);
@@ -300,8 +306,7 @@ static void handle_download_folder(void) {
 
     Frame resp = {0};
     int rc = download_folder_api(storage_path, folder_id, &resp);
-    if (rc != 0) {
-        fprintf(stderr, "download_folder_api failed (%d)\n", rc);
+    if (!report_request("download_folder_api", rc)) {
         return;
     }
     print_response(&resp);
@@ -331,8 +336,7 @@ static void handle_download_file(void) {
 
     Frame resp = {0};
     int rc = download_file_api(storage_path, file_id, &resp);
-    if (rc != 0) {
-        fprintf(stderr, "download_file_api failed (%d)\n", rc);
+    if (!report_request("download_file_api", rc)) {
         return;
     }
     print_response(&resp);

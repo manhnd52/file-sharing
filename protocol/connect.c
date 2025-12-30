@@ -10,6 +10,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include <signal.h>
 
 static uint32_t generate_request_id(Connect *c) {
     pthread_mutex_lock(&c->request_lock);
@@ -18,9 +19,9 @@ static uint32_t generate_request_id(Connect *c) {
     return rid;
 }
 
-int connect_send_request(Connect *c, Frame *req, Frame *resp) {
+RequestResult connect_send_request(Connect *c, Frame *req, Frame *resp) {
     if (!c || !req || !resp) {
-        return -1;
+        return REQ_ERROR;
     }
 
     uint32_t rid = generate_request_id(c);
@@ -35,23 +36,31 @@ int connect_send_request(Connect *c, Frame *req, Frame *resp) {
             req->header.data.request_id = rid;
             break;
         default:
-            return -1;
+            return REQ_ERROR;
     }
 
     if (send_frame(c->sockfd, req) != 0) {
-        return -1;
+        return REQ_NO_RESP;
     }
+
+    puts("SENTED: ");
+    print_frame(req);
 
     c->last_sent_time = time(NULL);
 
     while (1) {
         if (recv_frame(c->sockfd, resp) != 0) {
-            return -1;
+            if (errno == EPIPE || errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT) {
+                return REQ_NO_RESP;
+            }
+            return REQ_ERROR;
         }
         uint32_t resp_id = (uint32_t)get_request_id(resp);
         // Ignore unexpected frames and keep waiting for the matching response.
         if (resp_id == rid) {
-            return 0;
+            puts("RECV:");
+            print_frame(resp);
+            return REQ_OK;
         }
     }
 }
@@ -80,6 +89,8 @@ Connect* connect_create(const char *host, uint16_t port, int timeout_seconds) {
         return NULL;
     }
 
+    // ignore SIGPIPE to avoid crash when peer socket is closed
+    signal(SIGPIPE, SIG_IGN); 
     pthread_mutex_init(&c->request_lock, NULL);
     c->request_counter = 1;
     c->last_sent_time = time(NULL);

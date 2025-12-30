@@ -1,7 +1,7 @@
 CC := gcc
 
 # ===== Flags =====
-CFLAGS := -Wall -Wextra -fPIC -Iinclude -I../protocol
+CFLAGS := -Wall -g  -O0 -Wextra -fPIC -Iinclude -I../protocol
 DEPFLAGS := -MMD -MP
 
 LDFLAGS :=

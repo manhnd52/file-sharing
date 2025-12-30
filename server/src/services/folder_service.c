@@ -1,6 +1,6 @@
 #include "services/folder_service.h"
 #include "database.h"
-#include "services/authorize_service.h"
+#include "services/permission_service.h"
 #include <sqlite3.h>
 #include <stdio.h>
 #include <string.h>

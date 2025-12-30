@@ -6,7 +6,6 @@ CREATE TABLE IF NOT EXISTS users (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-
 -- Table: sessions
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,3 +50,17 @@ CREATE TABLE IF NOT EXISTS permissions (
     permission INTEGER NOT NULL CHECK(permission IN (0,1,2,3)),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE download_sessions (
+    session_id            BLOB PRIMARY KEY,
+    state                 INTEGER NOT NULL CHECK (state BETWEEN 0 AND 5),
+    last_requested_chunk  INTEGER DEFAULT 0 NOT NULL,
+    chunk_size            INTEGER NOT NULL,
+    total_file_size       INTEGER NOT NULL,
+    file_id               INTEGER NOT NULL,
+    file_hashcode         TEXT NOT NULL
+);
+
+INSERT INTO users (username, password) VALUES
+('alice', '123'),
+('bob',   '123');
