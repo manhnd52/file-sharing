@@ -1,3 +1,18 @@
-*.o
-**/build/
-**/__pycache__/
+# binaries
+client/client
+client/libfsclient.so
+server/server
+*.so
+*.dll
+*.exe
+
+# python
+__pycache__/
+*.pyc
+
+# database / runtime data
+*.db
+
+# build
+build/
+dist/

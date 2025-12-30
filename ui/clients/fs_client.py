@@ -2,7 +2,7 @@ import json
 import os
 from ctypes import CDLL, c_char_p, c_uint16, c_int, c_size_t, create_string_buffer
 
-DEFAULT_HOST = os.environ.get("FS_HOST", "127.0.0.1")
+DEFAULT_HOST = os.environ.get("FS_HOST", "192.168.1.182")
 DEFAULT_PORT = int(os.environ.get("FS_PORT", "5555"))
 DEFAULT_TIMEOUT = int(os.environ.get("FS_TIMEOUT", "5"))
 
