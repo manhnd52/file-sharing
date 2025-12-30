@@ -350,15 +350,12 @@ int recv_frame(int sockfd, Frame *f) {
     free(buf);
     return -1;
   }
-  printf("Debug complete fix\n");
-
   if (parse_frame(buf, f->total_length, f) != 0 && is_null_frame(f)) {
     printf("Failed to parse frame\n");
     free(buf);
     return -1;
   }
 
-  printf("Debug complete fix\n");
   free(buf);
   return 0;
 }

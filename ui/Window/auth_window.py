@@ -87,6 +87,8 @@ class LoginWindow(QWidget):
         layout.addLayout(btn_row)
         outer.addWidget(card, alignment=Qt.AlignCenter)
 
+        self._loading = False
+
     def _apply_style(self):
         self.setStyleSheet(APP_STYLE)
 
@@ -102,20 +104,47 @@ class LoginWindow(QWidget):
 
     def _on_toggle_mode(self):
         self.is_register_mode = not self.is_register_mode
+        self._sync_mode_ui()
 
+        self.user_input.clear()
+        self.pass_input.clear()
+        self.pass_confirm_input.clear()
+
+    def _sync_mode_ui(self):
         if self.is_register_mode:
             self.subtitle.setText("Đăng ký tài khoản mới")
             self.toggle_btn.setText("Quay lại đăng nhập")
-            self.main_btn.setText("Tạo tài khoản")
             self.pass_confirm_label.show()
             self.pass_confirm_input.show()
         else:
             self.subtitle.setText("Đăng nhập để tiếp tục")
             self.toggle_btn.setText("Đăng ký")
-            self.main_btn.setText("Đăng nhập")
             self.pass_confirm_label.hide()
             self.pass_confirm_input.hide()
+        if not self._loading:
+            self._update_main_button_text()
 
-        self.user_input.clear()
-        self.pass_input.clear()
-        self.pass_confirm_input.clear()
+    def _update_main_button_text(self):
+        if self.is_register_mode:
+            self.main_btn.setText("Tạo tài khoản")
+        else:
+            self.main_btn.setText("Đăng nhập")
+
+    def set_loading(self, loading: bool):
+        if self._loading == loading:
+            return
+        self._loading = loading
+        widgets = [
+            self.user_input,
+            self.pass_input,
+            self.pass_confirm_input,
+            self.toggle_btn,
+        ]
+        for widget in widgets:
+            widget.setDisabled(loading)
+        if loading:
+            self.main_btn.setText("Đang xử lý…")
+            self.main_btn.setDisabled(True)
+        else:
+            self.main_btn.setDisabled(False)
+            self._update_main_button_text()

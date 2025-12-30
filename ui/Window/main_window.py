@@ -1,7 +1,8 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLineEdit, QLabel, QTableWidget, QTableWidgetItem,
-    QMenu, QAction, QPushButton, QHeaderView, QStyle
+    QMenu, QAction, QPushButton, QHeaderView, QStyle,
+    QProgressDialog, QApplication
 )
 from PyQt5.QtCore import Qt, QSize, pyqtSignal
 from styles import APP_STYLE
@@ -101,6 +102,15 @@ class MainWindow(QMainWindow):
         layout.addWidget(top)
         layout.addWidget(self.table)
 
+        self._loading_dialog = QProgressDialog(self)
+        self._loading_dialog.setWindowTitle("Đang xử lý")
+        self._loading_dialog.setWindowModality(Qt.WindowModal)
+        self._loading_dialog.setCancelButton(None)
+        self._loading_dialog.setMinimumDuration(0)
+        self._loading_dialog.setRange(0, 0)
+        self._loading_dialog.setAutoClose(False)
+        self._loading_dialog.setAutoReset(False)
+
     # ---------- VIEW API ----------
     def set_table_data(self, data):
         self.table.setRowCount(len(data))
@@ -187,6 +197,14 @@ class MainWindow(QMainWindow):
 
     def set_home_enabled(self, enabled: bool):
         self.btn_home.setEnabled(enabled)
+
+    def set_loading(self, loading: bool, message: str = "Đang tải..."):
+        if loading:
+            self._loading_dialog.setLabelText(message)
+            self._loading_dialog.show()
+            # QApplication.processEvents()
+            return
+        self._loading_dialog.hide()
 
     def _apply_style(self):
         self.setStyleSheet(APP_STYLE)

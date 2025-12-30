@@ -4,8 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define ONE_MB (1024 * 1024)
-#define MAX_PAYLOAD ONE_MB
+#define MAX_PAYLOAD 131072 //128kb
 #define AUTH_TOKEN_SIZE 16
 #define SESSIONID_SIZE 16
 

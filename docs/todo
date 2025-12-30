@@ -1,8 +1,6 @@
-- [] Hoàn thành kiểm soát quyền ở service
-- [] Một số hàm tương tác folder ở service
-- [] Download 
-
-Ý tưởng chuyển hết tất các các req theo path → id. → Bảo Khôi bỏ phần đường link.
-
+- [] Chưa xử lý khi sai mật khẩu
+- [] Download, upload xử lý khi mất kết nối
+- [] Xử lý thanh path
+- [] Xử lý search api → tìm kiếm toàn bộ root
 
 

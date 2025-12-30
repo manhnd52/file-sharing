@@ -1,8 +1,10 @@
 import json
 import os
 from ctypes import CDLL, c_char_p, c_uint16, c_int, c_size_t, create_string_buffer
+from enum import Enum
+from typing import Callable, Tuple
 
-DEFAULT_HOST = os.environ.get("FS_HOST", "192.168.1.182")
+DEFAULT_HOST = os.environ.get("FS_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("FS_PORT", "5555"))
 DEFAULT_TIMEOUT = int(os.environ.get("FS_TIMEOUT", "5"))
 
@@ -82,107 +84,124 @@ def ensure_connected(host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=DEFAULT_TIMEO
     _connected = (rc == 0)
     return _connected
 
-def _call_json(func, *args, buf_size=4096):
+def reconnect(host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT):
+    lib.fs_disconnect()
+    rc = lib.fs_connect(host.encode(), c_uint16(port), timeout)
+    _connected = (rc == 0)
+    return _connected
+
+# result code:
+# 0: OK
+# -1: error
+# -2: server not response
+class RequestResult(Enum):
+    OK = 0
+    ERROR = -1
+    NOT_RESPONSE = -2
+
+# Hàm trả về kết quả, trạng thái của request, và payload json đã được decode
+def _call_json(func, *args, buf_size=4096) -> Tuple[RequestResult, str]:
     buf = create_string_buffer(buf_size)
     rc = func(*args, buf, len(buf))
-    return (rc == 0), buf.value.decode(errors="ignore")
+    rr = RequestResult(rc)
+    return rr, buf.value.decode(errors="ignore")
 
 def login(username, password, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT):
     if not ensure_connected(host, port, timeout):
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_login_json, username.encode(), password.encode())
 
 def register(username, password, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT):
     if not ensure_connected(host, port, timeout):
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_register_json, username.encode(), password.encode())
 
 def auth(token, host=DEFAULT_HOST, port=DEFAULT_PORT, timeout=DEFAULT_TIMEOUT):
     if not ensure_connected(host, port, timeout):
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_auth_json, token.encode())
 
 def logout():
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_logout_json)
 
 def list_folder(folder_id=1):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_list_json, c_int(folder_id))
 
 def mkdir(parent_id, name):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_mkdir_json, c_int(parent_id), name.encode())
 
 def delete_folder(folder_id):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_delete_folder_json, c_int(folder_id))
 
 def delete_file(file_id):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_delete_file_json, c_int(file_id))
 
 def list_shared_items():
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_list_shared_items_json)
 
 def share_folder(folder_id, username, permission):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_share_folder_json, c_int(folder_id), username.encode(), c_int(permission))
 
 def share_file(file_id, username, permission):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_share_file_json, c_int(file_id), username.encode(), c_int(permission))
 
 def rename_folder(folder_id, new_name):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_rename_folder_json, c_int(folder_id), new_name.encode())
 
 def rename_file(file_id, new_name):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_rename_file_json, c_int(file_id), new_name.encode())
 
 def list_folder_permissions(folder_id):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_list_folder_permissions_json, c_int(folder_id))
 
 def list_file_permissions(file_id):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_list_file_permissions_json, c_int(file_id))
 
 def update_folder_permission(folder_id, username, permission):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_update_folder_permission_json, c_int(folder_id), username.encode(), c_int(permission))
 
 def update_file_permission(file_id, username, permission):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_update_file_permission_json, c_int(file_id), username.encode(), c_int(permission))
 
 def upload_file(file_path, parent_folder_id):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_upload_file_json, file_path.encode(), c_int(parent_folder_id))
 
 def download_file(dest_dir, file_id):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_download_file_json, dest_dir.encode(), c_int(file_id))
 
 def download_folder(dest_dir, folder_id):
     if not ensure_connected():
-        return False, ""
+        return RequestResult.ERROR, ""
     return _call_json(lib.fs_download_folder_json, dest_dir.encode(), c_int(folder_id))

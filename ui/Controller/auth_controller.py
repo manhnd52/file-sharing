@@ -14,13 +14,13 @@ class LoginController(QObject):
 
         self.view.login_requested.connect(self.on_login)
         self.view.register_requested.connect(self.on_register)
-
+        
     def on_login(self, username: str, password: str):
-        self.view.setEnabled(False)
+        self.view.set_loading(True)
         try:
             ok, final_username, msg, root_id, token = self.binder.login(username, password)
         finally:
-            self.view.setEnabled(True)
+            self.view.set_loading(False)
 
         if ok:
             self.auth_success.emit(final_username, root_id, token)
@@ -28,11 +28,11 @@ class LoginController(QObject):
             QMessageBox.warning(self.view, "Đăng nhập", msg or "Đăng nhập thất bại")
 
     def on_register(self, username: str, password: str, confirm: str):
-        self.view.setEnabled(False)
+        self.view.set_loading(True)
         try:
             ok, final_username, msg, root_id, token = self.binder.register(username, password, confirm)
         finally:
-            self.view.setEnabled(True)
+            self.view.set_loading(False)
 
         if ok:
             self.auth_success.emit(final_username, root_id, token)
