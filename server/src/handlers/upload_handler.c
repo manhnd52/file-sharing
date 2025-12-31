@@ -8,6 +8,7 @@
 #include <unistd.h>
 
 #include "services/permission_service.h"
+#include "services/upload_session_service.h"
 
 UploadSession ss[MAX_SESSION];
 
@@ -78,6 +79,9 @@ void upload_handler(Conn *c, Frame *data) {
 	// Update session metadata
 	if (chunk_index == us->last_received_chunk + 1 && us->chunk_size >= chunk_length) {
 		us->last_received_chunk = chunk_index;
+		if (chunk_index == 1) {
+			us_update_state(us->session_id, UPLOAD_UPLOADING);
+		}
 	} else {
 		Frame err_frame;
 		build_respond_frame(&err_frame, data->header.data.request_id, STATUS_NOT_OK,
@@ -116,7 +120,15 @@ void upload_handler(Conn *c, Frame *data) {
 	}
 
 	close(fd);
-	
+
+	if (!us_update_progress(us->session_id, us->last_received_chunk, us->total_received_size)) {
+		Frame err_frame;
+		build_respond_frame(&err_frame, data->header.data.request_id, STATUS_NOT_OK,
+		                   "{\"error\": \"Failed to persist session progress\"}");
+		send_frame(c->sockfd, &err_frame);
+		return;
+	}
+
 	// Send success response
 	cJSON *response = cJSON_CreateObject();
 	cJSON_AddStringToObject(response, "status", "ok");
@@ -147,7 +159,6 @@ Handler for UPLOAD_INIT command to start a new upload session when receiving CMD
 */
 void upload_init_handler(Conn *c, Frame *f) {
 	if (!c || !f) return;
-
 	
 	// Expect JSON payload { cmd: "UPLOAD_INIT", path: string, file_size: number, chunk_size: number }
 	cJSON *root = cJSON_Parse((const char *)f->payload);
@@ -220,6 +231,16 @@ void upload_init_handler(Conn *c, Frame *f) {
 		return;
 	}
 
+	if (!us_create(sid, us->uuid_str, chunk_size, file_size, parent_folder_id, file_name)) {
+		memset(us, 0, sizeof(UploadSession));
+		Frame err_frame;
+		build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
+							"{\"error\": \"Failed to persist upload session\"}");
+		send_frame(c->sockfd, &err_frame);
+		cJSON_Delete(root);
+		return;
+	}
+
 	// Respond with RES including sessionId
 	char uuid_str[37];
 	bytes_to_uuid_string(sid, uuid_str);
@@ -264,12 +285,15 @@ void upload_finish_handler(Conn *c, Frame *f) {
 	}
 
 	if (us->expected_file_size > 0 && us->total_received_size != us->expected_file_size) {
+		us_update_state(us->session_id, UPLOAD_FAILED);
 		respond_upload_finish_error(c, f, "{\"error\": \"incomplete_upload\"}");
 		cJSON_Delete(root);
 		return;
 	}
 
 	cJSON_Delete(root);
+
+	us_update_state(us->session_id, UPLOAD_COMPLETED);
 
 	// Move file from tmp to final storage location
 	char tmp_path[256];

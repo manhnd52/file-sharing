@@ -261,8 +261,8 @@ class MainBinder:
                     root_id = int(data.get("root_folder_id", 0))
                     save_session(username, token, root_id)
                 except json.JSONDecodeError:
-                    pass      
-            return True
+                    pass   
+                return True   
         else:
             self.isDisconnected = True
             return False

@@ -1,19 +1,38 @@
-from contextlib import contextmanager
-
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QObject, QRunnable, QThreadPool, Qt, pyqtSignal
 from PyQt5.QtWidgets import QInputDialog, QMessageBox, QFileDialog
 
 from clients import fs_client
 from DataBinder.main_binder import MainBinder
 from Controller.share_controller import ShareController
+from Window.main_window import MainWindow
+
+
+class _BinderWorkerSignals(QObject):
+    finished = pyqtSignal(object)
+    error = pyqtSignal(Exception)
+
+class _BinderWorker(QRunnable):
+    def __init__(self, func):
+        super().__init__()
+        self.func = func
+        self.signals = _BinderWorkerSignals()
+
+    def run(self):
+        try:
+            result = self.func()
+        except Exception as exc:
+            self.signals.error.emit(exc)
+        else:
+            self.signals.finished.emit(result)
 
 
 class MainController:
-    def __init__(self, view):
+    def __init__(self, view: MainWindow):
         self.view = view
         self.main_binder = MainBinder(view.style(), getattr(view, "username", ""), getattr(view, "root_folder_id", 1))
         self.share_controller = ShareController(view)
-        
+        self.thread_pool = QThreadPool()
+
         self.view.request_context_menu.connect(self.on_context_menu)
         self.view.request_share.connect(self.on_share)
         self.view.request_create_folder.connect(self.on_create_folder)
@@ -28,18 +47,28 @@ class MainController:
 
         self.load()
 
-    @contextmanager
-    def _loading(self, message: str):
+    def _run_task(self, message: str, func, on_success=None, on_error=None):
         self.view.set_loading(True, message)
-        try:
-            yield
-        finally:
+        worker = _BinderWorker(func)
+
+        def _done(result):
             self.view.set_loading(False)
+            if on_success:
+                on_success(result)
+
+        def _handle_error(exc):
+            self.view.set_loading(False)
+            if on_error:
+                on_error(exc)
+            else:
+                QMessageBox.warning(self.view, "Lỗi", str(exc))
+
+        worker.signals.finished.connect(_done)
+        worker.signals.error.connect(_handle_error)
+        self.thread_pool.start(worker)
 
     def load(self):
-        with self._loading("Đang tải thư mục..."):
-            data = self.main_binder.load_data()
-        self.reload(data)
+        self._run_task("Đang tải thư mục...", lambda: self.main_binder.load_data(), self.reload)
 
     def on_context_menu(self, row):
         self.view.show_context_menu(row)
@@ -51,88 +80,102 @@ class MainController:
         name, ok = QInputDialog.getText(self.view, "Tạo thư mục", "Tên thư mục:")
         if ok:
             name = name.strip()
-            with self._loading("Đang tạo thư mục..."):
-                success, msg = self.main_binder.create_folder(name)
-            if success:
-                QMessageBox.information(self.view, "Tạo thư mục", msg)
-            else:
-                QMessageBox.warning(self.view, "Tạo thư mục", msg)
-            self.reload()
+            def handle(result):
+                success, msg = result
+                if success:
+                    QMessageBox.information(self.view, "Tạo thư mục", msg)
+                else:
+                    QMessageBox.warning(self.view, "Tạo thư mục", msg)
+                self.reload()
+            self._run_task("Đang tạo thư mục...", lambda: self.main_binder.create_folder(name), handle)
 
     def on_upload_file(self):
         path, _ = QFileDialog.getOpenFileName(None, "Chọn tệp để tải lên")
-        with self._loading("Đang tải lên file..."):
-            success, msg = self.main_binder.upload_file(path)
-        if success:
-            QMessageBox.information(self.view, "Tải lên file", msg)
-        elif msg:
-            QMessageBox.warning(self.view, "Tải lên file", msg)
-        self.reload()
+        if not path:
+            return
+        def handle(result):
+            success, msg = result
+            if success:
+                QMessageBox.information(self.view, "Tải lên file", msg)
+            elif msg:
+                QMessageBox.warning(self.view, "Tải lên file", msg)
+            self.reload()
+        self._run_task("Đang tải lên file...", lambda: self.main_binder.upload_file(path), handle)
 
     def on_upload_folder(self):
         root_dir = QFileDialog.getExistingDirectory(None, "Chọn thư mục để tải lên")
-
-        with self._loading("Đang tải lên thư mục..."):
-            success, msg = self.main_binder.upload_folder(root_dir)
-        if success:
-            QMessageBox.information(self.view, "Tải lên thư mục", msg)
-        elif msg:
-            QMessageBox.warning(self.view, "Tải lên thư mục", msg or "Tải lên thư mục thất bại")
-        self.reload()
+        if not root_dir:
+            return
+        def handle(result):
+            success, msg = result
+            if success:
+                QMessageBox.information(self.view, "Tải lên thư mục", msg)
+            elif msg:
+                QMessageBox.warning(self.view, "Tải lên thư mục", msg or "Tải lên thư mục thất bại")
+            self.reload()
+        self._run_task("Đang tải lên thư mục...", lambda: self.main_binder.upload_folder(root_dir), handle)
 
 
     def on_open_folder(self, folder_id: int):
-        with self._loading("Đang chuyển tới thư mục..."):
-            data = self.main_binder.load_data(folder_id, push_to_stack=True)
-        self.reload(data)
+        self._run_task(
+            "Đang chuyển tới thư mục...",
+            lambda: self.main_binder.load_data(folder_id, push_to_stack=True),
+            self.reload,
+        )
 
     def on_back(self):
         prev = self.main_binder.go_back()
         if prev:
-            with self._loading("Đang tải thư mục..."):
-                data = self.main_binder.load_data(prev, push_to_stack=False)
-            self.reload(data)
+            self._run_task(
+                "Đang tải thư mục...",
+                lambda: self.main_binder.load_data(prev, push_to_stack=False),
+                self.reload,
+            )
 
     def on_home(self):
-        with self._loading("Đang về thư mục gốc..."):
-            data = self.main_binder.go_home()
-        self.reload(data)
+        self._run_task("Đang về thư mục gốc...", lambda: self.main_binder.go_home(), self.reload)
 
     def on_delete_item(self, item):
-        with self._loading("Đang xóa mục..."):
-            success, msg = self.main_binder.delete_item(item)
-        if success:
-            QMessageBox.information(self.view, "Xóa", msg)
-        else:
-            QMessageBox.warning(self.view, "Xóa", msg)
-        self.reload()
+        def handle(result):
+            success, msg = result
+            if success:
+                QMessageBox.information(self.view, "Xóa", msg)
+            else:
+                QMessageBox.warning(self.view, "Xóa", msg)
+            self.reload()
+        self._run_task("Đang xóa mục...", lambda: self.main_binder.delete_item(item), handle)
 
     def on_rename_item(self, item):
         new_name, ok = QInputDialog.getText(self.view, "Đổi tên", "Tên mới:", text=item.get("name", ""))
         if ok:
             new_name = new_name.strip()
-            with self._loading("Đang đổi tên..."):
-                success, msg = self.main_binder.rename_item(item, new_name)
-            if success:
-                QMessageBox.information(self.view, "Đổi tên", msg)
-            else:
-                QMessageBox.warning(self.view, "Đổi tên", msg)
-            self.reload()
+            def handle(result):
+                success, msg = result
+                if success:
+                    QMessageBox.information(self.view, "Đổi tên", msg)
+                else:
+                    QMessageBox.warning(self.view, "Đổi tên", msg)
+                self.reload()
+            self._run_task("Đang đổi tên...", lambda: self.main_binder.rename_item(item, new_name), handle)
 
     def on_download_item(self, item):
         title = "Chọn thư mục lưu"
         dest_dir = QFileDialog.getExistingDirectory(None, title)
-        with self._loading("Đang tải xuống..."):
-            success, msg = self.main_binder.download_item(item, dest_dir)
-        if success:
-            QMessageBox.information(self.view, "Tải xuống", msg)
-        else:
-            QMessageBox.warning(self.view, "Tải xuống", msg or "Tải xuống thất bại")
-        self.reload()
+        if not dest_dir:
+            return
+        def handle(result):
+            success, msg = result
+            if success:
+                QMessageBox.information(self.view, "Tải xuống", msg)
+            else:
+                QMessageBox.warning(self.view, "Tải xuống", msg or "Tải xuống thất bại")
+            self.reload()
+        self._run_task("Đang tải xuống...", lambda: self.main_binder.download_item(item, dest_dir), handle)
 
     def reload(self, data=None):
         if data is None:
-            data = self.main_binder.load_data()
+            self.load()
+            return
         if self.main_binder.isDisconnected:
             self._show_disconnect_dialog()
             return

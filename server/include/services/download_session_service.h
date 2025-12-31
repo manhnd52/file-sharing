@@ -10,7 +10,6 @@ typedef enum {
     DOWNLOAD_CANCELED = 5
 } DownloadState;
 
-
 int ds_create(
     const uint8_t session_id[16],
     int chunk_size,

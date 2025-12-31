@@ -61,6 +61,32 @@ CREATE TABLE download_sessions (
     file_hashcode         TEXT NOT NULL
 );
 
+CREATE TABLE upload_sessions (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- session identity
+    session_id BLOB         NOT NULL UNIQUE,        -- raw UUID (16 bytes)
+    uuid_str                TEXT NOT NULL UNIQUE,           -- UUID string (36 chars + null)
+
+    -- upload progress
+    last_received_chunk     INTEGER NOT NULL DEFAULT 0,
+    chunk_size              INTEGER NOT NULL,
+    total_received_size     INTEGER NOT NULL DEFAULT 0,
+    expected_file_size      INTEGER NOT NULL,
+
+    -- file info
+    parent_folder_id        INTEGER NOT NULL,
+    file_name               TEXT NOT NULL,
+
+    -- state
+    state                   INTEGER NOT NULL DEFAULT 0,
+
+    -- optional nhưng rất nên có
+    created_at              INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at              INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+
 INSERT INTO users (username, password) VALUES
 ('alice', '123'),
 ('bob',   '123');

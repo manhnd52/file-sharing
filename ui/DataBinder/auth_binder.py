@@ -2,6 +2,7 @@ import json
 
 from clients import fs_client
 
+RequestResult = fs_client.RequestResult
 
 class AuthBinder:
     """
@@ -14,21 +15,21 @@ class AuthBinder:
         username = username.strip()
         if not username or not password:
             return False, "", "Thiếu tên đăng nhập hoặc mật khẩu", 0, ""
-        ok, resp = fs_client.login(username, password)
-        if not ok:
+        request_result, resp = fs_client.login(username, password)
+        if request_result != RequestResult.OK:
             return False, "", self._extract_error(resp, "Đăng nhập thất bại"), 0, ""
         try:
             data = json.loads(resp) if resp else {}
             return True, data.get("username", username), "", int(data.get("root_folder_id", 0)), data.get("token", "")
         except json.JSONDecodeError:
-            return True, username, "", 0, ""
+            return False, username, "", 0, ""
 
     def register(self, username: str, password: str, confirm: str) -> tuple[bool, str, str, int, str]:
         username = username.strip()
         if not username or not password or password != confirm:
             return False, "", "Thông tin đăng ký không hợp lệ", 0, ""
-        ok, resp = fs_client.register(username, password)
-        if not ok:
+        request_result, resp = fs_client.register(username, password)
+        if request_result != RequestResult.OK:
             return False, "", self._extract_error(resp, "Đăng ký thất bại"), 0, ""
         try:
             data = json.loads(resp) if resp else {}

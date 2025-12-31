@@ -1,6 +1,9 @@
-- [] Chưa xử lý khi sai mật khẩu
+- [] Lỗi các hộp Đang xử lý
+- Chưa xử lý khi sai mật khẩu
 - [] Download, upload xử lý khi mất kết nối
 - [] Xử lý thanh path
 - [] Xử lý search api → tìm kiếm toàn bộ root
-
+- [x] Di chuyển file, folder
+- [] Chia sẻ theo đường link được tạo ra
+- [] Đóng gói client, có thể cài đặt ở bất kì máy nào
 

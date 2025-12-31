@@ -202,9 +202,10 @@ class MainWindow(QMainWindow):
         if loading:
             self._loading_dialog.setLabelText(message)
             self._loading_dialog.show()
-            # QApplication.processEvents()
+            QApplication.processEvents()
             return
         self._loading_dialog.hide()
+        QApplication.processEvents()
 
     def _apply_style(self):
         self.setStyleSheet(APP_STYLE)
