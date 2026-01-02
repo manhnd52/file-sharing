@@ -52,7 +52,7 @@ int us_get(
     }
 
     const char *sql =
-        "SELECT uuid_str, last_received_chunk, chunk_size, total_received_size, expected_file_size, parent_folder_id, file_name "
+        "SELECT uuid_str, last_received_chunk, chunk_size, total_received_size, expected_file_size, parent_folder_id, file_name, state "
         "FROM upload_sessions WHERE session_id = ?";
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) != SQLITE_OK) {
@@ -92,6 +92,7 @@ int us_get(
     }
     out->file_name[sizeof(out->file_name) - 1] = '\0';
 
+    out->state = (UploadState)sqlite3_column_int(stmt, 7);
     memcpy(out->session_id, session_id, BYTE_UUID_SIZE);
     sqlite3_finalize(stmt);
     return 1;

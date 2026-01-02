@@ -9,9 +9,6 @@
 
 #include "services/permission_service.h"
 #include "services/upload_session_service.h"
-
-UploadSession ss[MAX_SESSION];
-
 static void respond_upload_finish_error(Conn *c, Frame *f, const char *payload) {
 	if (!c || !f || !payload) return;
 	Frame err_frame;
@@ -29,15 +26,16 @@ static int ensure_tmp_dir() {
 	return mkdir("data/storage/tmp", 0755);
 }
 
-static int find_session(const uint8_t sid[SESSIONID_SIZE], UploadSession **out) {
-	// find existing
-	for (int i = 0; i < MAX_SESSION; ++i) {
-		if (memcmp(ss[i].session_id, sid, SESSIONID_SIZE) == 0 && ss[i].file_name[0] != '\0') {
-			*out = &ss[i];
-			return 0;
-		}
+static int load_upload_session(const uint8_t session_id[SESSIONID_SIZE], UploadSession *out) {
+	if (!session_id || !out) {
+		return -1;
 	}
-	return -1;
+
+	if (!us_get(session_id, out)) {
+		return -1;
+	}
+
+	return 0;
 }
 
 /*
@@ -67,8 +65,8 @@ void upload_handler(Conn *c, Frame *data) {
 	uint32_t chunk_index = data->header.data.chunk_index;
 	uint32_t chunk_length = data->header.data.chunk_length;
 
-	UploadSession *us = NULL;
-	if (find_session(sid, &us) != 0 || !us) {
+	UploadSession us = {0};
+	if (load_upload_session(sid, &us) != 0) {
 		Frame err_frame;
 		build_respond_frame(&err_frame, data->header.data.request_id, STATUS_NOT_OK,
 		                   "{\"error\": \"Session not found\"}");
@@ -76,11 +74,20 @@ void upload_handler(Conn *c, Frame *data) {
 		return;
 	}
 
+	if (us.state == UPLOAD_FAILED || us.state == UPLOAD_CANCELED) {
+		Frame err_frame;
+		build_respond_frame(&err_frame, data->header.data.request_id, STATUS_NOT_OK,
+		                   "{\"error\": \"session_not_active\"}");
+		send_frame(c->sockfd, &err_frame);
+		return;
+	}
+
 	// Update session metadata
-	if (chunk_index == us->last_received_chunk + 1 && us->chunk_size >= chunk_length) {
-		us->last_received_chunk = chunk_index;
+	if (chunk_index == us.last_received_chunk + 1 && us.chunk_size >= chunk_length) {
+		us.last_received_chunk = chunk_index;
 		if (chunk_index == 1) {
-			us_update_state(us->session_id, UPLOAD_UPLOADING);
+			us_update_state(us.session_id, UPLOAD_UPLOADING);
+			us.state = UPLOAD_UPLOADING;
 		}
 	} else {
 		Frame err_frame;
@@ -91,14 +98,14 @@ void upload_handler(Conn *c, Frame *data) {
 	}
     
 	if (data->payload_len > 0) {
-		us->total_received_size += (uint64_t)data->payload_len;
+		us.total_received_size += (uint64_t)data->payload_len;
 	}
 
 	// Write chunk at offset = chunk_index * chunk_length
 	// O_CREAT | O_WRONLY: create file if not exists, open for writing only
 	// 0644: rw-r--r--
 	char file_path[256];
-	snprintf(file_path, sizeof(file_path), "data/storage/tmp/upload_%s", us->uuid_str);
+	snprintf(file_path, sizeof(file_path), "data/storage/tmp/upload_%s", us.uuid_str);
 	int fd = open(file_path, O_CREAT | O_WRONLY, 0644);
 	if (fd < 0) {
 		Frame err_frame;
@@ -108,7 +115,7 @@ void upload_handler(Conn *c, Frame *data) {
 		return;
 	}
 
-	off_t offset = ((off_t)chunk_index - 1) * (off_t)us->chunk_size;
+	off_t offset = ((off_t)chunk_index - 1) * (off_t)us.chunk_size;
 	ssize_t write_num = pwrite(fd, data->payload, data->payload_len, offset);
 	if (write_num < 0 || (size_t)write_num != data->payload_len) {
 		Frame err_frame;
@@ -121,7 +128,7 @@ void upload_handler(Conn *c, Frame *data) {
 
 	close(fd);
 
-	if (!us_update_progress(us->session_id, us->last_received_chunk, us->total_received_size)) {
+	if (!us_update_progress(us.session_id, us.last_received_chunk, us.total_received_size)) {
 		Frame err_frame;
 		build_respond_frame(&err_frame, data->header.data.request_id, STATUS_NOT_OK,
 		                   "{\"error\": \"Failed to persist session progress\"}");
@@ -147,9 +154,9 @@ void upload_handler(Conn *c, Frame *data) {
 	
 	printf("[UPLOAD:DATA][SUCCESS] Chunk %u written: bytes=%zu, total_received=%llu/%llu bytes (fd=%d, user_id=%d, session=%s)\n", 
 	       chunk_index, data->payload_len, 
-	       (unsigned long long)us->total_received_size, 
-	       (unsigned long long)us->expected_file_size,
-	       c->sockfd, c->user_id, us->uuid_str);
+	       (unsigned long long)us.total_received_size, 
+	       (unsigned long long)us.expected_file_size,
+	       c->sockfd, c->user_id, us.uuid_str);
 }
 
 /*
@@ -192,47 +199,18 @@ void upload_init_handler(Conn *c, Frame *f) {
     }
 	
 	uint8_t sid[BYTE_UUID_SIZE];
-
 	generate_byte_uuid(sid);
 
-	// Create session slot
-	UploadSession *us = NULL;
-	for (int i = 0; i < MAX_SESSION; ++i) {
-		if (ss[i].file_name[0] == '\0') {
-			memset(&ss[i], 0, sizeof(UploadSession));
-			memcpy(ss[i].session_id, sid, SESSIONID_SIZE);
-			char uuid_str[37];
-
-			if (bytes_to_uuid_string(sid, uuid_str) != 0) {
-				Frame err_frame;
-				build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
-									"{\"error\": \"Server Error\"}");
-				send_frame(c->sockfd, &err_frame);
-				return;
-			}
-
-			// Store upload file path to use after all chunks received
-			snprintf(ss[i].file_name, sizeof(ss[i].file_name), "%s", file_name);
-			snprintf(ss[i].uuid_str, sizeof(ss[i].uuid_str), "%s", uuid_str);
-			ss[i].parent_folder_id = parent_folder_id;
-			ss[i].last_received_chunk = 0;
-			ss[i].chunk_size = chunk_size;
-			ss[i].total_received_size = 0;
-			ss[i].expected_file_size = file_size;
-			us = &ss[i];
-			break;
-		}
-	}
-	if (!us) {
+	char uuid_str[37];
+	if (bytes_to_uuid_string(sid, uuid_str) != 0) {
 		Frame err_frame;
 		build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
-							"{\"error\": \"No available session slots\"}");
+							"{\"error\": \"Server Error\"}");
 		send_frame(c->sockfd, &err_frame);
 		return;
 	}
 
-	if (!us_create(sid, us->uuid_str, chunk_size, file_size, parent_folder_id, file_name)) {
-		memset(us, 0, sizeof(UploadSession));
+	if (!us_create(sid, uuid_str, chunk_size, file_size, parent_folder_id, file_name)) {
 		Frame err_frame;
 		build_respond_frame(&err_frame, f->header.cmd.request_id, STATUS_NOT_OK,
 							"{\"error\": \"Failed to persist upload session\"}");
@@ -242,8 +220,6 @@ void upload_init_handler(Conn *c, Frame *f) {
 	}
 
 	// Respond with RES including sessionId
-	char uuid_str[37];
-	bytes_to_uuid_string(sid, uuid_str);
 	char payload[128];
 	snprintf(payload, sizeof(payload), "{\"sessionId\": \"%s\"}", uuid_str);
 	Frame ok;
@@ -277,15 +253,16 @@ void upload_finish_handler(Conn *c, Frame *f) {
 		return;
 	}
 
-	UploadSession *us = NULL;
-	if (find_session(session_id, &us) != 0 || !us) {
+	UploadSession us = {0};
+	if (load_upload_session(session_id, &us) != 0) {
 		respond_upload_finish_error(c, f, "{\"error\": \"session_not_found\"}");
 		cJSON_Delete(root);
 		return;
 	}
 
-	if (us->expected_file_size > 0 && us->total_received_size != us->expected_file_size) {
-		us_update_state(us->session_id, UPLOAD_FAILED);
+	if (us.expected_file_size > 0 && us.total_received_size != us.expected_file_size) {
+		us.state = UPLOAD_FAILED;
+		us_update_state(us.session_id, UPLOAD_FAILED);
 		respond_upload_finish_error(c, f, "{\"error\": \"incomplete_upload\"}");
 		cJSON_Delete(root);
 		return;
@@ -293,17 +270,18 @@ void upload_finish_handler(Conn *c, Frame *f) {
 
 	cJSON_Delete(root);
 
-	us_update_state(us->session_id, UPLOAD_COMPLETED);
+	us.state = UPLOAD_COMPLETED;
+	us_update_state(us.session_id, UPLOAD_COMPLETED);
 
 	// Move file from tmp to final storage location
 	char tmp_path[256];
-	snprintf(tmp_path, sizeof(tmp_path), "data/storage/tmp/upload_%s", us->uuid_str);
+	snprintf(tmp_path, sizeof(tmp_path), "data/storage/tmp/upload_%s", us.uuid_str);
 	
 	// Remove "upload_" prefix to get final path
 	char final_path[256];
 	snprintf(final_path, sizeof(final_path),
          "data/storage/%s",
-         us->uuid_str);
+         us.uuid_str);
 	
 	// Move file
 	if (rename(tmp_path, final_path) != 0) {
@@ -311,10 +289,10 @@ void upload_finish_handler(Conn *c, Frame *f) {
 	}
 
 	// Save file metadata to database, associate with user, etc. (omitted for brevity)
-	int file_id = file_save_metadata(c->user_id, us->parent_folder_id, us->file_name, us->uuid_str, us->total_received_size);
+	int file_id = file_save_metadata(c->user_id, us.parent_folder_id, us.file_name, us.uuid_str, us.total_received_size);
 
 	// Clear session
-	memset(us, 0, sizeof(UploadSession));
+	us_delete(us.session_id);
 
 	// Respond success
 	Frame ok;
@@ -337,4 +315,56 @@ void upload_finish_handler(Conn *c, Frame *f) {
 	send_frame(c->sockfd, &ok);
 	
 	return;
+}
+
+void upload_cancel_handler(Conn *c, Frame *f) {
+	if (!c || !f) return;
+
+	cJSON *root = cJSON_Parse((const char *)f->payload);
+	if (!root) {
+		respond_upload_finish_error(c, f, "{\"error\": \"invalid_json\"}");
+		return;
+	}
+
+	cJSON *session_id_json = cJSON_GetObjectItemCaseSensitive(root, "session_id");
+	if (!session_id_json || !cJSON_IsString(session_id_json) || session_id_json->valuestring[0] == '\0') {
+		respond_upload_finish_error(c, f, "{\"error\": \"missing_session_id\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	const char *session_id_str = session_id_json->valuestring;
+	uint8_t session_id[BYTE_UUID_SIZE] = {0};
+
+	if (uuid_string_to_bytes(session_id_str, session_id) != 0) {
+		respond_upload_finish_error(c, f, "{\"error\": \"invalid_session_id\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	UploadSession us = {0};
+	if (load_upload_session(session_id, &us) != 0) {
+		respond_upload_finish_error(c, f, "{\"error\": \"session_not_found\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	us.state = UPLOAD_CANCELED;
+	if (!us_update_state(us.session_id, UPLOAD_CANCELED)) {
+		respond_upload_finish_error(c, f, "{\"error\": \"failed_to_cancel_session\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	char tmp_path[256];
+	snprintf(tmp_path, sizeof(tmp_path), "data/storage/tmp/upload_%s", us.uuid_str);
+	unlink(tmp_path);
+
+	us_delete(us.session_id);
+
+	Frame ok;
+	build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK,
+						"{\"message\": \"upload_session_canceled\"}");
+	send_frame(c->sockfd, &ok);
+	cJSON_Delete(root);
 }

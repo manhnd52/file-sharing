@@ -51,7 +51,7 @@ int ds_get(
     }
 
     const char *sql =
-        "SELECT last_requested_chunk, chunk_size, total_file_size, file_id, file_hashcode "
+        "SELECT last_requested_chunk, chunk_size, total_file_size, file_id, file_hashcode, state "
         "FROM download_sessions WHERE session_id = ?";
     sqlite3_stmt *stmt = NULL;
     if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) != SQLITE_OK) {
@@ -74,6 +74,7 @@ int ds_get(
     out->total_file_size = (uint64_t)sqlite3_column_int64(stmt, 2);
     out->file_id = sqlite3_column_int(stmt, 3);
     const unsigned char *hash = sqlite3_column_text(stmt, 4);
+    out->state = (DownloadState)sqlite3_column_int(stmt, 5);
     if (hash) {
         strncpy(out->file_hashcode, (const char *)hash, sizeof(out->file_hashcode) - 1);
     } else {

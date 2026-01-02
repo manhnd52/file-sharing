@@ -1,15 +1,6 @@
 #include <stdint.h>
 #include "handlers/download_handler.h"
 
-typedef enum {
-    DOWNLOAD_INIT = 0,
-    DOWNLOAD_DOWNLOADING = 1,
-    DOWNLOAD_PAUSED = 2,
-    DOWNLOAD_COMPLETED = 3,
-    DOWNLOAD_FAILED = 4,
-    DOWNLOAD_CANCELED = 5
-} DownloadState;
-
 int ds_create(
     const uint8_t session_id[16],
     int chunk_size,

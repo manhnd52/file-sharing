@@ -32,6 +32,7 @@ class MainController:
         self.main_binder = MainBinder(view.style(), getattr(view, "username", ""), getattr(view, "root_folder_id", 1))
         self.share_controller = ShareController(view)
         self.thread_pool = QThreadPool()
+        self._cancel_context = None
 
         self.view.request_context_menu.connect(self.on_context_menu)
         self.view.request_share.connect(self.on_share)
@@ -44,6 +45,8 @@ class MainController:
         self.view.request_delete.connect(self.on_delete_item)
         self.view.request_rename.connect(self.on_rename_item)
         self.view.request_download.connect(self.on_download_item)
+        self.view.request_cancel_transfer.connect(self.on_cancel_transfer)
+        self.view.request_cancel_transfer.connect(self.on_cancel_transfer)
 
         self.load()
 
@@ -53,11 +56,15 @@ class MainController:
 
         def _done(result):
             self.view.set_loading(False)
+            self.view.set_cancel_enabled(False)
+            self._cancel_context = None
             if on_success:
                 on_success(result)
 
         def _handle_error(exc):
             self.view.set_loading(False)
+            self.view.set_cancel_enabled(False)
+            self._cancel_context = None
             if on_error:
                 on_error(exc)
             else:
@@ -66,6 +73,14 @@ class MainController:
         worker.signals.finished.connect(_done)
         worker.signals.error.connect(_handle_error)
         self.thread_pool.start(worker)
+        lower = message.lower()
+        if "tải lên" in lower:
+            self._cancel_context = "Upload"
+        elif "tải xuống" in lower:
+            self._cancel_context = "Download"
+        else:
+            self._cancel_context = None
+        self.view.set_cancel_enabled(self._cancel_context is not None)
 
     def load(self):
         self._run_task("Đang tải thư mục...", lambda: self.main_binder.load_data(), self.reload)
@@ -171,6 +186,63 @@ class MainController:
                 QMessageBox.warning(self.view, "Tải xuống", msg or "Tải xuống thất bại")
             self.reload()
         self._run_task("Đang tải xuống...", lambda: self.main_binder.download_item(item, dest_dir), handle)
+
+    def on_cancel_transfer(self):
+        session_id, ok = QInputDialog.getText(self.view, "Hủy transfer", "Nhập session_id:")
+        if not ok or not session_id.strip():
+            return
+        session_id = session_id.strip()
+        default_index = 0 if self._cancel_context == "Download" else 1 if self._cancel_context == "Upload" else 0
+        transfer_type, ok = QInputDialog.getItem(
+            self.view, "Chọn loại transfer", "Loại:",
+            ["Download", "Upload"], default_index, False
+        )
+        if not ok:
+            return
+
+        if transfer_type == "Download":
+            func = lambda: self.main_binder.cancel_download_session(session_id)
+            message = "Đang hủy download..."
+        else:
+            func = lambda: self.main_binder.cancel_upload_session(session_id)
+            message = "Đang hủy upload..."
+
+        def handle(result):
+            success, msg = result
+            if success:
+                QMessageBox.information(self.view, "Hủy transfer", msg or "Đã gửi yêu cầu hủy")
+            elif msg:
+                QMessageBox.warning(self.view, "Hủy transfer", msg)
+
+        self._run_task(message, func, handle)
+
+    def on_cancel_transfer(self):
+        session_id, ok = QInputDialog.getText(self.view, "Hủy transfer", "Nhập session_id:")
+        if not ok or not session_id.strip():
+            return
+        session_id = session_id.strip()
+        transfer_type, ok = QInputDialog.getItem(
+            self.view, "Chọn loại transfer", "Loại:",
+            ["Download", "Upload"], 0, False
+        )
+        if not ok:
+            return
+
+        if transfer_type == "Download":
+            func = lambda: self.main_binder.cancel_download_session(session_id)
+            message = "Đang hủy download..."
+        else:
+            func = lambda: self.main_binder.cancel_upload_session(session_id)
+            message = "Đang hủy upload..."
+
+        def handle(result):
+            success, msg = result
+            if success:
+                QMessageBox.information(self.view, "Hủy transfer", msg or "Đã gửi yêu cầu hủy")
+            elif msg:
+                QMessageBox.warning(self.view, "Hủy transfer", msg)
+
+        self._run_task(message, func, handle)
 
     def reload(self, data=None):
         if data is None:

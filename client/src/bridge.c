@@ -165,3 +165,15 @@ int fs_download_folder_json(const char *dest_dir, int folder_id, char *out_buf, 
     int rc = download_folder_api(dest_dir, folder_id, &res);
     return handle_respond(rc, &res, out_buf, out_len);
 }
+
+int fs_cancel_download_json(const char *session_id, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = download_cancel_api(session_id, &res);
+    return handle_respond(rc, &res, out_buf, out_len);
+}
+
+int fs_cancel_upload_json(const char *session_id, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = upload_cancel_api(session_id, &res);
+    return handle_respond(rc, &res, out_buf, out_len);
+}

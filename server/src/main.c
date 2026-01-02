@@ -43,10 +43,12 @@ int main() {
 
     register_cmd_route("UPLOAD_INIT", upload_init_handler);
     register_cmd_route("UPLOAD_FINISH", upload_finish_handler);
+    register_cmd_route("UPLOAD_CANCEL", upload_cancel_handler);
 
     register_cmd_route("DOWNLOAD_INIT", download_init_handler);
     register_cmd_route("DOWNLOAD_CHUNK", download_chunk_handler);
     register_cmd_route("DOWNLOAD_FINISH", download_finish_handler);
+    register_cmd_route("DOWNLOAD_CANCEL", download_cancel_handler);
 
     char *out = cJSON_Print(get_file_info(6)); // Test hàm mới thêm
     printf("Test get_file_info output: %s\n", out);

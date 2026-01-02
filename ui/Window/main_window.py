@@ -20,6 +20,7 @@ class MainWindow(QMainWindow):
     request_back = pyqtSignal()
     request_delete = pyqtSignal(object)
     request_rename = pyqtSignal(object)
+    request_cancel_transfer = pyqtSignal()
     request_logout = pyqtSignal()
 
     def __init__(self, username: str, root_folder_id: int = 1):
@@ -105,11 +106,15 @@ class MainWindow(QMainWindow):
         self._loading_dialog = QProgressDialog(self)
         self._loading_dialog.setWindowTitle("Đang xử lý")
         self._loading_dialog.setWindowModality(Qt.WindowModal)
-        self._loading_dialog.setCancelButton(None)
         self._loading_dialog.setMinimumDuration(0)
         self._loading_dialog.setRange(0, 0)
         self._loading_dialog.setAutoClose(False)
         self._loading_dialog.setAutoReset(False)
+
+        self._cancel_button = QPushButton("Hủy", self._loading_dialog)
+        self._cancel_button.hide()
+        self._loading_dialog.setCancelButton(self._cancel_button)
+        self._loading_dialog.canceled.connect(self._on_progress_canceled)
 
     # ---------- VIEW API ----------
     def set_table_data(self, data):
@@ -206,6 +211,12 @@ class MainWindow(QMainWindow):
             return
         self._loading_dialog.hide()
         QApplication.processEvents()
+
+    def set_cancel_enabled(self, enabled: bool):
+        self._cancel_button.setVisible(enabled)
+
+    def _on_progress_canceled(self):
+        self.request_cancel_transfer.emit()
 
     def _apply_style(self):
         self.setStyleSheet(APP_STYLE)

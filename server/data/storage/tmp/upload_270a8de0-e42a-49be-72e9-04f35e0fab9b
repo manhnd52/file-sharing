@@ -1,0 +1,20 @@
+{
+	"downloading":	{
+		"session_id":	"",
+		"file_name":	"",
+		"storage_path":	"",
+		"created_at":	"",
+		"total_size":	0,
+		"chunk_size":	0,
+		"last_received_chunk":	0
+	},
+	"uploading":	{
+		"session_id":	"270a8de0-e42a-49be-72e9-04f35e0fab9b",
+		"parent_folder_id":	1,
+		"file_path":	"/home/manha/Project/file-sharing/ui/cache.json",
+		"created_at":	"2026-01-02T09:21:45Z",
+		"total_size":	335,
+		"chunk_size":	131072,
+		"last_sent_chunk":	0
+	}
+}

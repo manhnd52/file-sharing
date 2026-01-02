@@ -1,9 +1,11 @@
 #include "cJSON.h"
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "client.h"
 
+#include "utils/cache_util.h"
 #include "utils/file_system_util.h"
 #include "utils/uuid_util.h"
 
@@ -144,6 +146,9 @@ int upload_file_api(const char* file_path, int parent_folder_id, Frame* res) {
     cJSON_Delete(payload_json);
     payload_json = NULL;
 
+    cache_init_uploading_state(session_id_str, parent_folder_id,
+                               file_path, (uint64_t)file_size, MAX_PAYLOAD);
+
     uint8_t session_id[SESSIONID_SIZE] = {0};
     if (uuid_string_to_bytes(session_id_str, session_id) != 0) {
         goto cleanup;
@@ -160,6 +165,7 @@ int upload_file_api(const char* file_path, int parent_folder_id, Frame* res) {
         if (rc != 0) {
             goto cleanup;
         }
+        cache_update_uploading_last_sent_chunk(chunk_index);
         ++chunk_index;
     }
 
@@ -172,7 +178,7 @@ int upload_file_api(const char* file_path, int parent_folder_id, Frame* res) {
     if (rc != 0) {
         goto cleanup;
     }
-
+    cache_reset_uploading();
     rc = 0;
 
 cleanup:

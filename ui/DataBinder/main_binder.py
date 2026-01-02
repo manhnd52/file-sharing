@@ -245,6 +245,34 @@ class MainBinder:
             except json.JSONDecodeError:
                 return False, "Tải xuống thất bại"
         return True, "Tải xuống thành công"
+
+    def cancel_download_session(self, session_id: str) -> tuple[bool, str]:
+        if not session_id:
+            return False, "Thiếu session_id hủy download"
+        request_result, resp = fs_client.cancel_download(session_id)
+        if request_result != RequestResult.OK:
+            if request_result == RequestResult.NOT_RESPONSE:
+                self.isDisconnected = True
+            try:
+                data = json.loads(resp) if resp else {}
+                return False, data.get("error", "Hủy download thất bại")
+            except json.JSONDecodeError:
+                return False, "Hủy download thất bại"
+        return True, "Đã gửi yêu cầu hủy download"
+
+    def cancel_upload_session(self, session_id: str) -> tuple[bool, str]:
+        if not session_id:
+            return False, "Thiếu session_id hủy upload"
+        request_result, resp = fs_client.cancel_upload(session_id)
+        if request_result != RequestResult.OK:
+            if request_result == RequestResult.NOT_RESPONSE:
+                self.isDisconnected = True
+            try:
+                data = json.loads(resp) if resp else {}
+                return False, data.get("error", "Hủy upload thất bại")
+            except json.JSONDecodeError:
+                return False, "Hủy upload thất bại"
+        return True, "Đã gửi yêu cầu hủy upload"
     
     def reconnect(self):
         if fs_client.reconnect():

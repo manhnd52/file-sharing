@@ -43,8 +43,8 @@ RequestResult connect_send_request(Connect *c, Frame *req, Frame *resp) {
         return REQ_NO_RESP;
     }
 
-    puts("SENTED: ");
-    print_frame(req);
+    // puts("SENTED: ");
+    // print_frame(req);
 
     c->last_sent_time = time(NULL);
 
@@ -58,8 +58,8 @@ RequestResult connect_send_request(Connect *c, Frame *req, Frame *resp) {
         uint32_t resp_id = (uint32_t)get_request_id(resp);
         // Ignore unexpected frames and keep waiting for the matching response.
         if (resp_id == rid) {
-            puts("RECV:");
-            print_frame(resp);
+            //puts("RECV:");
+            //print_frame(resp);
             return REQ_OK;
         }
     }

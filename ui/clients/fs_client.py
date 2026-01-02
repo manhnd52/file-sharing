@@ -73,6 +73,10 @@ lib.fs_download_file_json.argtypes = [c_char_p, c_int, c_char_p, c_size_t]
 lib.fs_download_file_json.restype = c_int
 lib.fs_download_folder_json.argtypes = [c_char_p, c_int, c_char_p, c_size_t]
 lib.fs_download_folder_json.restype = c_int
+lib.fs_cancel_download_json.argtypes = [c_char_p, c_char_p, c_size_t]
+lib.fs_cancel_download_json.restype = c_int
+lib.fs_cancel_upload_json.argtypes = [c_char_p, c_size_t]
+lib.fs_cancel_upload_json.restype = c_int
 
 _connected = False
 
@@ -205,3 +209,13 @@ def download_folder(dest_dir, folder_id):
     if not ensure_connected():
         return RequestResult.ERROR, ""
     return _call_json(lib.fs_download_folder_json, dest_dir.encode(), c_int(folder_id))
+
+def cancel_download(session_id, dest_buf_size=4096):
+    if not ensure_connected():
+        return RequestResult.ERROR, ""
+    return _call_json(lib.fs_cancel_download_json, session_id.encode())
+
+def cancel_upload(session_id):
+    if not ensure_connected():
+        return RequestResult.ERROR, ""
+    return _call_json(lib.fs_cancel_upload_json, session_id.encode())

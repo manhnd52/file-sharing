@@ -42,5 +42,7 @@ int fs_update_file_permission_json(int file_id, const char *username, int permis
 int fs_upload_file_json(const char *file_path, int parent_folder_id, char *out_buf, size_t out_len);
 int fs_download_file_json(const char *dest_dir, int file_id, char *out_buf, size_t out_len);
 int fs_download_folder_json(const char *dest_dir, int folder_id, char *out_buf, size_t out_len);
+int fs_cancel_download_json(const char *session_id, char *out_buf, size_t out_len);
+int fs_cancel_upload_json(const char *session_id, char *out_buf, size_t out_len);
 
 #endif

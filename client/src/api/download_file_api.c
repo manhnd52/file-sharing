@@ -7,6 +7,7 @@
 
 #include "api/download_api.h"
 #include "utils/file_system_util.h"
+#include "utils/cache_util.h"
 
 static int sent_download_init_cmd(int folder_id, Frame* res) {
     cJSON *json = cJSON_CreateObject();
@@ -148,10 +149,12 @@ int download_file_api(const char* storage_path, int file_id, Frame* res) {
     }
 
     FILE* fp = fopen(target_path, "wb");
-    
+
     if (!fp) {
         return -1;
     }
+
+    cache_init_downloading_state(session_id, file_name, target_path, file_size, chunk_size);
 
     for (uint32_t chunk_index = 1; chunk_index <= total_chunks; ++chunk_index) {
         Frame chunk_resp = {0};
@@ -175,10 +178,11 @@ int download_file_api(const char* storage_path, int file_id, Frame* res) {
             rc = -1;
             goto cleanup;
         }
+        cache_update_downloading_last_received_chunk(chunk_index);
     }
 
     rc = sent_download_finish_cmd(session_id, res);
-    
+
     if (rc != 0) {
         goto cleanup;
     }
@@ -188,6 +192,7 @@ int download_file_api(const char* storage_path, int file_id, Frame* res) {
         goto cleanup;
     }
 
+    cache_reset_downloading();
     rc = 0;
 
 cleanup:

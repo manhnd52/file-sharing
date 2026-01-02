@@ -67,6 +67,13 @@ void download_chunk_handler(Conn *c, Frame *req) {
         return;
     }
 
+    if (ds.state == DOWNLOAD_FAILED || ds.state == DOWNLOAD_CANCELED) {
+        respond_download_finish_error(c, req, "{\"error\": \"session_not_active\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    // Thêm kiểm tra nếu session đã CANCEL, FAILED thì cũng phản hồi từ chối 
     uint32_t chunk_index = (uint32_t)chunk_index_json->valueint;
     printf("[DOWNLOAD] Requested Chunk index: %d\n", chunk_index);
     if (chunk_index != ds.last_requested_chunk + 1) {
@@ -236,6 +243,53 @@ void download_finish_handler(Conn *c, Frame *f) {
     // Respond with OK
     Frame ok;
     build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK, "{\"message\": \"download_session_finished\"}");
+    send_frame(c->sockfd, &ok);
+    cJSON_Delete(root);
+}
+
+// Frame payload: { "cmd": "DOWNLOAD_CANCEL", "session_id":...}
+void download_cancel_handler(Conn *c, Frame *req) {
+    if (!c || !req) return;
+
+    cJSON *root = cJSON_Parse((const char *)req->payload);
+    if (!root) {
+        respond_download_finish_error(c, req, "{\"error\": \"invalid_json\"}");
+        return;
+    }
+
+    cJSON *session_id_json = cJSON_GetObjectItemCaseSensitive(root, "session_id");
+
+    if (!session_id_json || !cJSON_IsString(session_id_json) || session_id_json->valuestring[0] == '\0') {
+        respond_download_finish_error(c, req, "{\"error\": \"missing_session_id\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    const char *session_id_str = session_id_json->valuestring;
+    uint8_t session_id[BYTE_UUID_SIZE];
+
+    if (uuid_string_to_bytes(session_id_str, session_id) != 0) {
+        respond_download_finish_error(c, req, "{\"error\": \"invalid_session_id\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    DownloadSession ds = {0};
+    if (!ds_get(session_id, &ds)) {
+        respond_download_finish_error(c, req, "{\"error\": \"session_not_found\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    if (!ds_update_state(session_id, DOWNLOAD_CANCELED)) {
+        respond_download_finish_error(c, req, "{\"error\": \"failed_to_cancel_session\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    Frame ok;
+    build_respond_frame(&ok, req->header.cmd.request_id, STATUS_OK,
+                        "{\"message\": \"download_session_canceled\"}");
     send_frame(c->sockfd, &ok);
     cJSON_Delete(root);
 }
