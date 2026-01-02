@@ -293,3 +293,89 @@ void download_cancel_handler(Conn *c, Frame *req) {
     send_frame(c->sockfd, &ok);
     cJSON_Delete(root);
 }
+
+
+void download_resume_handler(Conn *c, Frame *req) {
+    if (!c || !req) return;
+
+    cJSON *root = cJSON_Parse((const char *)req->payload);
+    if (!root) {
+        respond_download_finish_error(c, req, "{\"error\": \"invalid_json\"}");
+        return;
+    }
+
+    cJSON *cmd_json = cJSON_GetObjectItemCaseSensitive(root, "cmd");
+    cJSON *session_id_json = cJSON_GetObjectItemCaseSensitive(root, "session_id");
+    cJSON *last_received_chunk_json = cJSON_GetObjectItemCaseSensitive(root, "last_received_chunk");
+
+    if (!cmd_json || !cJSON_IsString(cmd_json) ||
+        strcmp(cmd_json->valuestring, "DOWNLOAD_RESUME") != 0 ||
+        !session_id_json || !cJSON_IsString(session_id_json) ||
+        !last_received_chunk_json || !cJSON_IsNumber(last_received_chunk_json)) {
+        respond_download_finish_error(c, req, "{\"error\": \"missing_parameters\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    const char *session_id_str = session_id_json->valuestring;
+    if (session_id_str[0] == '\0') {
+        respond_download_finish_error(c, req, "{\"error\": \"missing_session_id\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    double last_chunk_value = last_received_chunk_json->valuedouble;
+    if (last_chunk_value < 0 || last_chunk_value > UINT32_MAX) {
+        respond_download_finish_error(c, req, "{\"error\": \"invalid_chunk_index\"}");
+        cJSON_Delete(root);
+        return;
+    }
+    uint32_t last_received_chunk = (uint32_t)last_chunk_value;
+
+    uint8_t session_id[BYTE_UUID_SIZE];
+    if (uuid_string_to_bytes(session_id_str, session_id) != 0) {
+        respond_download_finish_error(c, req, "{\"error\": \"invalid_session_id\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    DownloadSession ds = {0};
+    if (!ds_get(session_id, &ds)) {
+        respond_download_finish_error(c, req, "{\"error\": \"session_not_found\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    if (ds.state == DOWNLOAD_FAILED ||
+        ds.state == DOWNLOAD_CANCELED ||
+        ds.state == DOWNLOAD_COMPLETED) {
+        respond_download_finish_error(c, req, "{\"error\": \"session_not_active\"}");
+        cJSON_Delete(root);
+        return;
+    }
+
+    if (ds.last_requested_chunk != last_received_chunk) {
+        if (!ds_update_progress(session_id, last_received_chunk)) {
+            respond_download_finish_error(c, req, "{\"error\": \"failed_to_update_progress\"}");
+            cJSON_Delete(root);
+            return;
+        }
+        ds.last_requested_chunk = last_received_chunk;
+    }
+
+    char uuid_str[37];
+    bytes_to_uuid_string(session_id, uuid_str);
+    char payload[256];
+    snprintf(payload, sizeof(payload),
+             "{\"message\": \"resume_ok\", \"session_id\": \"%s\", "
+             "\"chunk_size\": %" PRIu32 ", \"last_requested_chunk\": %" PRIu32 ", "
+             "\"next_chunk\": %" PRIu32 "}",
+             uuid_str, ds.chunk_size, ds.last_requested_chunk,
+             ds.last_requested_chunk + 1);
+
+    Frame ok;
+    build_respond_frame(&ok, req->header.cmd.request_id, STATUS_OK, payload);
+    send_frame(c->sockfd, &ok);
+
+    cJSON_Delete(root);
+}

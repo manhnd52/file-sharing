@@ -33,5 +33,6 @@ void upload_handler(Conn *c, Frame *data);
 void upload_init_handler(Conn *c, Frame *f);
 void upload_finish_handler(Conn *c, Frame *f);
 void upload_cancel_handler(Conn *c, Frame *f);
+void upload_resume_handler(Conn *c, Frame *f);
 
 #endif

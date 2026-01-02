@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <stdbool.h>
+#include <inttypes.h>
 
 #include "services/permission_service.h"
 #include "services/upload_session_service.h"
@@ -366,5 +368,70 @@ void upload_cancel_handler(Conn *c, Frame *f) {
 	build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK,
 						"{\"message\": \"upload_session_canceled\"}");
 	send_frame(c->sockfd, &ok);
+	cJSON_Delete(root);
+}
+
+void upload_resume_handler(Conn *c, Frame *f) {
+	if (!c || !f) return;
+
+	cJSON *root = cJSON_Parse((const char *)f->payload);
+	if (!root) {
+		respond_upload_finish_error(c, f, "{\"error\": \"invalid_json\"}");
+		return;
+	}
+
+	cJSON *cmd_json = cJSON_GetObjectItemCaseSensitive(root, "cmd");
+	cJSON *session_id_json = cJSON_GetObjectItemCaseSensitive(root, "session_id");
+
+	if (!cmd_json || !cJSON_IsString(cmd_json) ||
+		strcmp(cmd_json->valuestring, "UPLOAD_RESUME") != 0 ||
+		!session_id_json || !cJSON_IsString(session_id_json)) {
+		respond_upload_finish_error(c, f, "{\"error\": \"missing_parameters\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	const char *session_id_str = session_id_json->valuestring;
+	if (session_id_str[0] == '\0') {
+		respond_upload_finish_error(c, f, "{\"error\": \"missing_session_id\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	uint8_t session_id[SESSIONID_SIZE] = {0};
+	if (uuid_string_to_bytes(session_id_str, session_id) != 0) {
+		respond_upload_finish_error(c, f, "{\"error\": \"invalid_session_id\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	UploadSession us = {0};
+	if (load_upload_session(session_id, &us) != 0) {
+		respond_upload_finish_error(c, f, "{\"error\": \"session_not_found\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	if (us.state == UPLOAD_FAILED ||
+		us.state == UPLOAD_CANCELED ||
+		us.state == UPLOAD_COMPLETED) {
+		respond_upload_finish_error(c, f, "{\"error\": \"session_not_active\"}");
+		cJSON_Delete(root);
+		return;
+	}
+
+	char uuid_str[37];
+	bytes_to_uuid_string(session_id, uuid_str);
+
+	char payload[256];
+	snprintf(payload, sizeof(payload),
+			 "{\"message\": \"resume_ok\", \"session_id\": \"%s\", "
+			 "\"chunk_size\": %" PRIu32 ", \"last_received_chunk\": %" PRIu32 "}",
+			 uuid_str, us.chunk_size, us.last_received_chunk);
+
+	Frame ok;
+	build_respond_frame(&ok, f->header.cmd.request_id, STATUS_OK, payload);
+	send_frame(c->sockfd, &ok);
+
 	cJSON_Delete(root);
 }

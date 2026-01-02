@@ -32,5 +32,5 @@ void download_chunk_handler(Conn *c, Frame *req);
 void download_init_handler(Conn *c, Frame *f);
 void download_finish_handler(Conn *c, Frame *f);
 void download_cancel_handler(Conn *c, Frame *req);
-
+void download_resume_handler(Conn *c, Frame *req);
 #endif
