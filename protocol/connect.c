@@ -38,7 +38,7 @@ RequestResult connect_send_request(Connect *c, Frame *req, Frame *resp) {
         default:
             return REQ_ERROR;
     }
-
+    pthread_mutex_lock(&c->io_lock);
     if (send_frame(c->sockfd, req) != 0) {
         return REQ_NO_RESP;
     }
@@ -50,16 +50,15 @@ RequestResult connect_send_request(Connect *c, Frame *req, Frame *resp) {
 
     while (1) {
         if (recv_frame(c->sockfd, resp) != 0) {
-            if (errno == EPIPE || errno == EAGAIN || errno == EWOULDBLOCK || errno == ETIMEDOUT) {
-                return REQ_NO_RESP;
-            }
-            return REQ_ERROR;
+            pthread_mutex_unlock(&c->io_lock);
+            return REQ_NO_RESP;
         }
         uint32_t resp_id = (uint32_t)get_request_id(resp);
         // Ignore unexpected frames and keep waiting for the matching response.
         if (resp_id == rid) {
             //puts("RECV:");
             //print_frame(resp);
+            pthread_mutex_unlock(&c->io_lock);
             return REQ_OK;
         }
     }

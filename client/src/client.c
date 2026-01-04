@@ -42,10 +42,16 @@ int send_cmd(cJSON *json, Frame *res) {
 
     Frame request = {0};
     int rc = build_cmd_frame(&request, 0, payload);
+    printf("[DEBUG] Sending command: %s\n", payload);
+    print_frame(&request);
+    puts("");
+    
     if (rc == 0) {
         rc = connect_send_request(g_conn, &request, res);
     }
-
+    printf("[DEBUG] Received response with rc = %d:\n", rc);
+    print_frame(res);
+    puts("");
     free(payload);
 
     return rc;

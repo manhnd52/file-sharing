@@ -2,6 +2,7 @@
 #include "utils/cache_util.h"
 
 #include <fcntl.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -77,6 +78,13 @@ static uint32_t read_json_uint32(cJSON *item) {
     return (uint32_t)value;
 }
 
+static CacheTransferState read_json_state(cJSON *item) {
+    if (!cJSON_IsNumber(item))
+        return CACHE_TRANSFER_IDLE;
+    int v = (int)item->valuedouble;
+    return v;
+}
+
 static void fill_downloading_state(CacheDownloadingState *out, cJSON *downloading_json) {
     if (!out || !downloading_json)
         return;
@@ -89,6 +97,7 @@ static void fill_downloading_state(CacheDownloadingState *out, cJSON *downloadin
                      out->storage_path, CACHE_PATH_MAX);
     copy_json_string(cJSON_GetObjectItemCaseSensitive(downloading_json, "created_at"),
                      out->created_at, CACHE_CREATED_AT_MAX);
+    out->state = read_json_state(cJSON_GetObjectItemCaseSensitive(downloading_json, "state"));
 
     out->total_size =
         read_json_uint64(cJSON_GetObjectItemCaseSensitive(downloading_json, "total_size"));
@@ -110,6 +119,7 @@ static void fill_uploading_state(CacheUploadingState *out, cJSON *uploading_json
                      out->file_path, CACHE_PATH_MAX);
     copy_json_string(cJSON_GetObjectItemCaseSensitive(uploading_json, "created_at"),
                      out->created_at, CACHE_CREATED_AT_MAX);
+    out->state = read_json_state(cJSON_GetObjectItemCaseSensitive(uploading_json, "state"));
 
     out->total_size =
         read_json_uint64(cJSON_GetObjectItemCaseSensitive(uploading_json, "total_size"));
@@ -123,7 +133,6 @@ int cache_load_file(const char *path, CacheState *out) {
     if (!path || !out)
         return -1;
 
-    printf("Debug: cache_load_file\n");
     memset(out, 0, sizeof(*out));
 
     char *content = NULL;
@@ -159,9 +168,6 @@ int cache_load_file(const char *path, CacheState *out) {
         printf("Không tao duoc upload json\n");
     }
 
-    char* payload = cJSON_Print(json);
-    printf("\n READ JSON: %s\n", payload);
-
     cJSON_Delete(json);
     return status;
 }
@@ -183,6 +189,7 @@ static cJSON *build_downloading_object(const CacheDownloadingState *state) {
                             state->storage_path[0] ? state->storage_path : "");
     cJSON_AddStringToObject(downloading, "created_at",
                             state->created_at[0] ? state->created_at : "");
+    cJSON_AddNumberToObject(downloading, "state", (int)state->state);
     cJSON_AddNumberToObject(downloading, "total_size", (double)state->total_size);
     cJSON_AddNumberToObject(downloading, "chunk_size", (double)state->chunk_size);
     cJSON_AddNumberToObject(downloading, "last_received_chunk",
@@ -203,6 +210,7 @@ static cJSON *build_uploading_object(const CacheUploadingState *state) {
                             state->file_path[0] ? state->file_path : "");
     cJSON_AddStringToObject(uploading, "created_at",
                             state->created_at[0] ? state->created_at : "");
+    cJSON_AddNumberToObject(uploading, "state", (int)state->state);
     cJSON_AddNumberToObject(uploading, "total_size", (double)state->total_size);
     cJSON_AddNumberToObject(uploading, "chunk_size", (double)state->chunk_size);
     cJSON_AddNumberToObject(uploading, "last_sent_chunk", (double)state->last_sent_chunk);
@@ -231,7 +239,6 @@ int cache_save_file(const char *path, const CacheState *data) {
     cJSON_AddItemToObject(json, "uploading", uploading);
 
     char *payload = cJSON_Print(json);
-    printf("Payload: %s\n", payload);
     if (!payload) {
         cJSON_Delete(json);
         return -1;
@@ -286,7 +293,6 @@ static int cache_load_or_zero(CacheState *state) {
         return -1;
 
     int rc = cache_load_default(state);
-    printf("Debug: Cache load or 0: %d\n", rc);
     if (rc != 0) {
         memset(state, 0, sizeof(*state));
     }
@@ -337,6 +343,7 @@ int cache_reset_downloading(void) {
     CacheState current;
     cache_load_or_zero(&current);
     memset(&current.downloading, 0, sizeof(current.downloading));
+    current.downloading.state = CACHE_TRANSFER_IDLE;
     return cache_save_default(&current);
 }
 
@@ -344,6 +351,7 @@ int cache_reset_uploading(void) {
     CacheState current;
     cache_load_or_zero(&current);
     memset(&current.uploading, 0, sizeof(current.uploading));
+    current.uploading.state = CACHE_TRANSFER_IDLE;
     return cache_save_default(&current);
 }
 
@@ -384,6 +392,7 @@ void cache_init_downloading_state(const char *session_id,
     state.total_size = total_size;
     state.chunk_size = chunk_size;
     state.last_received_chunk = 0;
+    state.state = CACHE_TRANSFER_ACTIVE;
 
     CacheState current;
     cache_load_or_zero(&current);
@@ -416,10 +425,42 @@ void cache_init_uploading_state(const char *session_id,
     state.total_size = total_size;
     state.chunk_size = chunk_size;
     state.last_sent_chunk = 0;
+    state.state = CACHE_TRANSFER_ACTIVE;
 
     CacheState current;
     cache_load_or_zero(&current);
     memcpy(&current.uploading, &state, sizeof(current.uploading));
     memset(&current.downloading, 0, sizeof(current.downloading));
     cache_save_default(&current);
+}
+
+
+int cache_set_downloading_transfer_state(CacheTransferState state) {
+    CacheState current;
+    cache_load_or_zero(&current);
+    current.downloading.state = state;
+    return cache_save_default(&current);
+}
+
+int cache_set_uploading_transfer_state(CacheTransferState state) {
+    CacheState current;
+    cache_load_or_zero(&current);
+    current.uploading.state = state;
+    return cache_save_default(&current);
+}
+
+CacheTransferState cache_get_downloading_transfer_state() {
+    CacheState current;
+    if (cache_load_default(&current) != 0) {
+        return -1;
+    }
+    return current.downloading.state;
+}
+
+CacheTransferState cache_get_uploading_transfer_state() {
+    CacheState current;
+    if (cache_load_default(&current) != 0) {
+        return -1;
+    }
+    return current.uploading.state;
 }

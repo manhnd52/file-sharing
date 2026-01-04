@@ -236,15 +236,17 @@ class MainBinder:
             request_result, resp = fs_client.download_folder(dest_dir, item.get("id"))
         else:
             request_result, resp = fs_client.download_file(dest_dir, item.get("id"))
+        data = json.loads(resp) if resp else {}
         if request_result != RequestResult.OK:
             if request_result == RequestResult.NOT_RESPONSE:
+                print( "PYTHON: set disconnected" )
                 self.isDisconnected = True
             try:
-                data = json.loads(resp) if resp else {}
+                print( "PYTHON: parse json" )
                 return False, data.get("error", "Tải xuống thất bại")
             except json.JSONDecodeError:
                 return False, "Tải xuống thất bại"
-        return True, "Tải xuống thành công"
+        return True, data.get("message", "Tải xuống thành công")
 
     def cancel_download_session(self, session_id: str) -> tuple[bool, str]:
         if not session_id:
@@ -258,7 +260,7 @@ class MainBinder:
                 return False, data.get("error", "Hủy download thất bại")
             except json.JSONDecodeError:
                 return False, "Hủy download thất bại"
-        return True, "Đã gửi yêu cầu hủy download"
+        return True, "Hủy download thành công"
 
     def cancel_upload_session(self, session_id: str) -> tuple[bool, str]:
         if not session_id:
@@ -272,7 +274,7 @@ class MainBinder:
                 return False, data.get("error", "Hủy upload thất bại")
             except json.JSONDecodeError:
                 return False, "Hủy upload thất bại"
-        return True, "Đã gửi yêu cầu hủy upload"
+        return True, "Hủy upload thành công"
     
     def reconnect(self):
         if fs_client.reconnect():
@@ -291,6 +293,19 @@ class MainBinder:
                 except json.JSONDecodeError:
                     pass   
                 return True   
+            
         else:
             self.isDisconnected = True
             return False
+
+    def resume_download_session(self) -> tuple[bool, str]:
+        request_result, resp = fs_client.resume_download()
+        if request_result != RequestResult.OK:
+            if request_result == RequestResult.NOT_RESPONSE:
+                self.isDisconnected = True
+            try:
+                data = json.loads(resp) if resp else {}
+                return False, data.get("error", "Download thất bại")
+            except json.JSONDecodeError:
+                return False, "Download thất bại"
+        return True, "Download thành công"

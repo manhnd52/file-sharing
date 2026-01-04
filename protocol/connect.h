@@ -17,6 +17,7 @@ typedef struct Connect {
     uint32_t request_counter;
     pthread_mutex_t request_lock;
     time_t last_sent_time;
+    pthread_mutex_t io_lock;
     int timeout_seconds;
 } Connect;
 

@@ -6,5 +6,6 @@
 int download_file_api(const char* storage_path, int file_id, Frame* res);
 int download_folder_api(const char* storage_path, int folder_id, Frame* res);
 int download_cancel_api(const char* session_id, Frame* res);
+int download_resume_api(Frame* res);
 
 #endif

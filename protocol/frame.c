@@ -281,6 +281,7 @@ int send_frame(int sockfd, Frame *f) {
   if (send_1 != sizeof(net_len)) {
     return -1;
   }
+
   if (send_all(sockfd, &f->msg_type, sizeof(f->msg_type)) !=
       sizeof(f->msg_type))
     return -1;

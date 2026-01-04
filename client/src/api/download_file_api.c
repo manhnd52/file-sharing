@@ -49,6 +49,7 @@ static int sent_download_chunk_cmd(const char* session_id, uint32_t chunk_index,
     cJSON_AddNumberToObject(json, "chunk_index", chunk_index);
 
     int rc = send_cmd(json, resp);
+    printf("DEBUG: after send_cmd rc = %d\n", rc);
     cJSON_Delete(json);
     return rc;
 }
@@ -158,8 +159,20 @@ int download_file_api(const char* storage_path, int file_id, Frame* res) {
 
     for (uint32_t chunk_index = 1; chunk_index <= total_chunks; ++chunk_index) {
         Frame chunk_resp = {0};
+        if (cache_get_downloading_transfer_state() == CACHE_TRANSFER_CANCELLED) {
+            rc = REQ_OK;
+            res->msg_type = MSG_RESPOND;
+            snprintf((char*)res->payload, MAX_PAYLOAD, "{\"message\":\"Cancelled\"}");
+            res->payload_len = strlen((char*)res->payload);
+            goto cleanup;
+        }
+
         rc = sent_download_chunk_cmd(session_id, chunk_index, &chunk_resp);
         if (rc != 0) {
+            if (rc == REQ_NO_RESP) {
+                printf("DEBUG: set disconnected\n");
+                cache_set_downloading_transfer_state(CACHE_TRANSFER_DISCONNECTED);
+            }
             goto cleanup;
         }
 
@@ -202,5 +215,85 @@ cleanup:
             remove(target_path);
         }
     }
+    return rc;
+}
+
+int download_resume_api(Frame* res) {
+    if (!res) {
+        return REQ_ERROR;
+    }
+
+    CacheState cache;
+    int rc = cache_load_default(&cache);
+    if (rc != 0) {
+        return rc;
+    }
+    CacheDownloadingState* downloading = &cache.downloading;
+    if (downloading->session_id[0] == '\0' ||
+        downloading->file_name[0] == '\0' ||
+        downloading->storage_path[0] == '\0' ||
+        downloading->total_size == 0 ||
+        downloading->chunk_size == 0) {
+        return REQ_ERROR;
+    }
+
+    if (downloading->state != CACHE_TRANSFER_DISCONNECTED) {
+        return REQ_ERROR;
+    }
+    
+    uint32_t total_chunks = 0;
+    uint32_t last_received_chunk = downloading->last_received_chunk;
+    uint32_t total_size = downloading->total_size;
+    uint32_t chunk_size = downloading->chunk_size;
+    
+    total_chunks = (uint32_t)((total_size + chunk_size - 1) / chunk_size);
+    if (last_received_chunk >= total_chunks) {
+        return REQ_ERROR;
+    }
+
+    cJSON *json = cJSON_CreateObject();
+    cJSON_AddStringToObject(json, "cmd", "DOWNLOAD_RESUME");
+    cJSON_AddStringToObject(json, "session_id", downloading->session_id);
+    cJSON_AddNumberToObject(json, "last_received_chunk", last_received_chunk);
+
+    rc = send_cmd(json, res);
+
+    if (rc != 0) {
+        goto cleanup;
+    }
+
+    FILE* fp = fopen(downloading->storage_path, "ab");
+    if (!fp) {
+        rc = REQ_ERROR;
+        goto cleanup;
+    }
+
+    for (uint32_t chunk_index = last_received_chunk + 1; chunk_index <= total_chunks; ++chunk_index) {
+        rc = sent_download_chunk_cmd(downloading->session_id, chunk_index, res);
+        if (rc != 0) {
+            fclose(fp);
+            goto cleanup;
+        }
+
+        size_t written = fwrite(res->payload, 1, res->payload_len, fp);
+
+        if (written != res->payload_len) {
+            rc = REQ_ERROR;
+            fclose(fp);
+            goto cleanup;
+        }
+
+        cache_update_downloading_last_received_chunk(chunk_index);
+    }
+
+    rc = sent_download_finish_cmd(downloading->session_id, res);
+    fclose(fp);
+    if (rc != 0) {
+        goto cleanup;
+    }
+    rc = 0;
+
+cleanup:
+    cJSON_Delete(json);
     return rc;
 }
