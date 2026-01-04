@@ -1,13 +1,13 @@
 {
 	"downloading":	{
-		"session_id":	"1e1a6b8d-eecf-6292-c925-fd575ea920d7",
-		"file_name":	"video-new.mp4",
-		"storage_path":	"/home/manha/Download/new_new_new_video-new.mp4",
-		"created_at":	"2026-01-04T21:04:41Z",
-		"state":	3,
-		"total_size":	92827455,
-		"chunk_size":	131072,
-		"last_received_chunk":	256
+		"session_id":	"",
+		"file_name":	"",
+		"storage_path":	"",
+		"created_at":	"",
+		"state":	0,
+		"total_size":	0,
+		"chunk_size":	0,
+		"last_received_chunk":	0
 	},
 	"uploading":	{
 		"session_id":	"",

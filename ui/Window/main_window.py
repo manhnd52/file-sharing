@@ -22,6 +22,7 @@ class MainWindow(QMainWindow):
     request_rename = pyqtSignal(object)
     request_cancel_transfer = pyqtSignal()
     request_logout = pyqtSignal()
+    request_search = pyqtSignal(str)
 
     def __init__(self, username: str, root_folder_id: int = 1):
         super().__init__()
@@ -58,8 +59,9 @@ class MainWindow(QMainWindow):
         self.btn_back.setObjectName("BackBtn")
         self.btn_back.clicked.connect(self._on_back_clicked)
 
-        self.path_edit = QLineEdit(f"\\{self.username}")
-        self.path_edit.setReadOnly(True)
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Tìm kiếm theo tên...")
+        self.search_input.textChanged.connect(self._on_search_changed)
 
         self.user_label = QLabel(self.username)
         self.user_label.setObjectName("UserName")
@@ -70,7 +72,7 @@ class MainWindow(QMainWindow):
 
         top_layout.addWidget(self.btn_home)
         top_layout.addWidget(self.btn_back)
-        top_layout.addWidget(self.path_edit)
+        top_layout.addWidget(self.search_input)
         top_layout.addStretch()
         top_layout.addWidget(self.user_label)
         top_layout.addWidget(self.logout_btn)
@@ -206,6 +208,8 @@ class MainWindow(QMainWindow):
             return
         self._loading_dialog.hide()
         QApplication.processEvents()
+    def _on_search_changed(self, text: str):
+        self.request_search.emit(text)
 
     def _apply_style(self):
         self.setStyleSheet(APP_STYLE)
