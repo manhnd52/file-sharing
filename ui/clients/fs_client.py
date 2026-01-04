@@ -75,10 +75,12 @@ lib.fs_download_folder_json.argtypes = [c_char_p, c_int, c_char_p, c_size_t]
 lib.fs_download_folder_json.restype = c_int
 lib.fs_cancel_download_json.argtypes = [c_char_p, c_char_p, c_size_t]
 lib.fs_cancel_download_json.restype = c_int
-lib.fs_cancel_upload_json.argtypes = [c_char_p, c_size_t]
+lib.fs_cancel_upload_json.argtypes = [c_char_p, c_char_p, c_size_t]
 lib.fs_cancel_upload_json.restype = c_int
 lib.fs_resume_download_json.argtypes = [c_char_p, c_size_t]
 lib.fs_resume_download_json.restype = c_int
+lib.fs_resume_upload_json.argtypes = [c_char_p, c_size_t]
+lib.fs_resume_upload_json.restype = c_int
 
 _connected = False
 
@@ -226,3 +228,8 @@ def resume_download():
     if not ensure_connected():
         return RequestResult.ERROR, ""
     return _call_json(lib.fs_resume_download_json)  # -1 indicates resume with session_id
+
+def resume_upload():
+    if not ensure_connected():
+        return RequestResult.ERROR, ""
+    return _call_json(lib.fs_resume_upload_json)

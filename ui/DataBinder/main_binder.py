@@ -309,3 +309,15 @@ class MainBinder:
             except json.JSONDecodeError:
                 return False, "Download thất bại"
         return True, "Download thành công"
+
+    def resume_upload_session(self) -> tuple[bool, str]:
+        request_result, resp = fs_client.resume_upload()
+        if request_result != RequestResult.OK:
+            if request_result == RequestResult.NOT_RESPONSE:
+                self.isDisconnected = True
+            try:
+                data = json.loads(resp) if resp else {}
+                return False, data.get("error", "Upload thất bại")
+            except json.JSONDecodeError:
+                return False, "Upload thất bại"
+        return True, "Upload thành công"

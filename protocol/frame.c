@@ -262,10 +262,26 @@ ssize_t read_exact(int sockfd, void *buf, size_t len) {
   uint8_t *p = buf;
   while (total < len) {
     ssize_t n = recv(sockfd, p + total, len - total, 0);
-    if (n <= 0) {
-      if (n < 0 && errno == EINTR)
+    if (n < 0) {
+      // Handle specific error cases
+      if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) {
+        // Interrupted or would block - continue trying
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+          printf("[READ_EXACT] Socket timeout or would block, bytes received so far: %zu/%zu\n", 
+                 total, len);
+          continue;
+        }
         continue;
-      // Don't perror here to allow caller to handle disconnect gracefully
+      }
+      // Other errors (ECONNRESET, EPIPE, etc.)
+      printf("[READ_EXACT] Recv error: errno=%d, bytes received: %zu/%zu\n", 
+             errno, total, len);
+      return -1;
+    }
+    if (n == 0) {
+      // Connection closed by peer
+      printf("[READ_EXACT] Connection closed by peer after %zu/%zu bytes\n", 
+             total, len);
       return -1;
     }
     total += n;

@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -75,6 +76,13 @@ Connect* connect_create(const char *host, uint16_t port, int timeout_seconds) {
         free(c);
         return NULL;
     }
+
+    // Enable SO_REUSEADDR to allow quick reconnection
+    int opt = 1;
+    setsockopt(c->sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    
+    // Disable Nagle's algorithm for faster transmission
+    setsockopt(c->sockfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
 
     struct sockaddr_in addr = {0};
     addr.sin_family = AF_INET;

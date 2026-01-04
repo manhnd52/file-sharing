@@ -45,5 +45,6 @@ int fs_download_folder_json(const char *dest_dir, int folder_id, char *out_buf, 
 int fs_cancel_download_json(const char *session_id, char *out_buf, size_t out_len);
 int fs_resume_download_json(char *out_buf, size_t out_len);
 int fs_cancel_upload_json(const char *session_id, char *out_buf, size_t out_len);
+int fs_resume_upload_json(char *out_buf, size_t out_len);
 
 #endif

@@ -3,6 +3,7 @@
 #include "handlers/folder_handler.h"
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -11,6 +12,7 @@
 #include <string.h>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -71,6 +73,16 @@ static void conn_init(Conn *c, int sockfd) {
   pthread_mutex_init(&c->write_lock, NULL);
   pthread_mutex_init(&c->read_lock, NULL);
   c->buf_len = 0;
+  
+  // Set socket options for reliable communication
+  int opt = 1;
+  setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+  
+  // Set receive timeout to prevent indefinite blocking
+  struct timeval timeout;
+  timeout.tv_sec = 30;  // 30 seconds
+  timeout.tv_usec = 0;
+  setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 }
 
 static void conn_cleanup(Conn *c) {
