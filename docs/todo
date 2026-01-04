@@ -1,12 +1,11 @@
-- [] Lỗi các hộp Đang xử lý → đang overengineering Folder
+- [x] Lỗi các hộp Đang xử lý → đang overengineering Folder
 - [x] Chưa xử lý khi sai mật khẩu
-- [] Download, upload xử lý khi mất kết nối (Doing)
+- [x] Download, upload xử lý khi mất kết nối (Doing)
     Client: download_resume_api → upload_resume_api
-- [] Xử lý thanh path
+- [] Xử lý thanh path 
 - [] Xử lý search api → tìm kiếm toàn bộ root
 - [x] Di chuyển file, folder
 - [] Chia sẻ theo đường link được tạo ra
-- [] Đóng gói client, có thể cài đặt ở bất kì máy nào (Có khả thi khi code C dựa trên thư viện của Linux)
 - [] Slide: trình bay theo huong mot chuc nang tai sao xung dang bao nhieu diem
 - [] Slide: Bo sung state cho Upload, Download
 - [x] Upload, Download Cancel

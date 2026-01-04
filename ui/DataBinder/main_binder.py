@@ -170,15 +170,15 @@ class MainBinder:
         if not path:
             return False, ""
         request_result, resp = fs_client.upload_file(path, self.current_folder_id)
+        data = json.loads(resp) if resp else {}
         if request_result != RequestResult.OK:
             if request_result == RequestResult.NOT_RESPONSE:
                 self.isDisconnected = True
             try:
-                data = json.loads(resp) if resp else {}
                 return False, data.get("error", "Tải lên thất bại")
             except json.JSONDecodeError:
                 return False, "Tải lên thất bại"
-        return True, "Tải lên thành công"
+        return True, data.get("message", "Tải lên thành công")
 
     def _ensure_subfolder(self, parent_id: int, name: str) -> int:
         request_result, resp = fs_client.list_folder(parent_id)
