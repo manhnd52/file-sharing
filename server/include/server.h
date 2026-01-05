@@ -35,6 +35,7 @@ int send_data(Conn *c, Frame f);
 int read_data(Conn *c, Frame *f);
 int send_error_response(Conn *c, uint32_t request_id,
                        const char *payload);
+void server_cleanup(void);
                        
 // Yêu cầu server dừng (an toàn)
 void server_stop();

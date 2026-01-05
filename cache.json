@@ -1,0 +1,22 @@
+{
+	"downloading":	{
+		"session_id":	"",
+		"file_name":	"",
+		"storage_path":	"",
+		"created_at":	"",
+		"state":	0,
+		"total_size":	0,
+		"chunk_size":	0,
+		"last_received_chunk":	0
+	},
+	"uploading":	{
+		"session_id":	"",
+		"parent_folder_id":	0,
+		"file_path":	"",
+		"created_at":	"",
+		"state":	0,
+		"total_size":	0,
+		"chunk_size":	0,
+		"last_sent_chunk":	0
+	}
+}

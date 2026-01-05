@@ -26,13 +26,23 @@ typedef struct {
 } WorkItem;
 
 #define QUEUE_CAPACITY 1024
+
 static WorkItem work_queue[QUEUE_CAPACITY];
 static int q_head = 0; // dequeue index
 static int q_tail = 0; // enqueue index
 static int q_size = 0;
-static pthread_mutex_t q_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t q_not_empty = PTHREAD_COND_INITIALIZER;
-static pthread_cond_t q_not_full = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t q_mutex;
+static pthread_cond_t q_not_empty;
+static pthread_cond_t q_not_full;
+static bool queue_initialized = false;
+
+static void queue_init(void) {
+  if (queue_initialized) return;
+  pthread_mutex_init(&q_mutex, NULL);
+  pthread_cond_init(&q_not_empty, NULL);
+  pthread_cond_init(&q_not_full, NULL);
+  queue_initialized = true;
+}
 
 static bool queue_push(WorkItem item) {
   pthread_mutex_lock(&q_mutex);
@@ -215,10 +225,20 @@ int server_start(int port) {
   // Register routes by message type
 
   memset(connections, 0, sizeof(connections));
-  // Start listener and worker threads
+  
+  // Initialize queue (critical for Android/Termux)
+  queue_init();
+  
+  // Start listener and worker threads with explicit attributes for Android
   pthread_t th_listener, th_worker;
-  pthread_create(&th_listener, NULL, listener_thread, &listen_fd);
-  pthread_create(&th_worker, NULL, worker_thread, NULL);
+  pthread_attr_t attr;
+  pthread_attr_init(&attr);
+  pthread_attr_setstacksize(&attr, 2 * 1024 * 1024); // 2MB stack for Android
+  
+  pthread_create(&th_listener, &attr, listener_thread, &listen_fd);
+  pthread_create(&th_worker, &attr, worker_thread, NULL);
+  
+  pthread_attr_destroy(&attr);
 
   // Join threads (server runs indefinitely) → tạm dừng luồng chính
   pthread_join(th_listener, NULL);
@@ -246,4 +266,13 @@ int send_error_response(Conn *c, uint32_t request_id,
   Frame resp;
   build_respond_frame(&resp, request_id, STATUS_NOT_OK, payload);
   return send_data(c, resp);
+}
+
+void server_cleanup(void) {
+  if (queue_initialized) {
+    pthread_mutex_destroy(&q_mutex);
+    pthread_cond_destroy(&q_not_empty);
+    pthread_cond_destroy(&q_not_full);
+    queue_initialized = false;
+  }
 }
