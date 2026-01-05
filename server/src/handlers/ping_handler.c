@@ -1,5 +1,7 @@
 #include "handlers/ping_handler.h"
-
+#include <stdio.h>
+#include "cJSON.h"
+#include <stdlib.h>
 
 // Handler for PING command
 void handle_cmd_ping(Conn *c, Frame *f) {
