@@ -4,6 +4,6 @@
 #include "frame.h"
 #include <cJSON.h>
 
-void handle_cmd_ping(Conn *c, Frame *f, const char *cmd);
+void handle_cmd_ping(Conn *c, Frame *f);
 
 #endif

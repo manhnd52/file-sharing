@@ -6,8 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void handle_cmd_delete_file(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_delete_file(Conn *c, Frame *f) {
     printf("[CMD:DELETE_FILE][INFO] user_id=%d\n", c->user_id);
 
     if (!db_global || c->user_id <= 0) {
@@ -88,8 +87,7 @@ void handle_cmd_delete_file(Conn *c, Frame *f, const char *cmd) {
     send_data(c, resp);
 }
 
-void handle_cmd_share_file(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_share_file(Conn *c, Frame *f) {
     printf("[CMD:SHARE_FILE][INFO] user_id=%d\n", c->user_id);
 
     if (!db_global || c->user_id <= 0) {
@@ -169,8 +167,7 @@ void handle_cmd_share_file(Conn *c, Frame *f, const char *cmd) {
     send_data(c, resp);
 }
 
-void handle_cmd_rename_file(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_rename_file(Conn *c, Frame *f) {
     printf("[CMD:RENAME_FILE][INFO] user_id=%d\n", c->user_id);
 
     if (!db_global || c->user_id <= 0) {

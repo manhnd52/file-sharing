@@ -9,7 +9,7 @@
 typedef void (*FrameHandler)(Conn *sc, Frame *f);
 
 // CMD handler function pointer (for JSON command routing)
-typedef void (*CMDHandler)(Conn *sc, Frame *f, const char *cmd);
+typedef void (*CMDHandler)(Conn *sc, Frame *f);
 typedef void (*AUTHHandler)(Conn *sc, Frame *f);
 
 // Register a handler for a specific message type (MSG_AUTH, MSG_CMD, MSG_DATA)

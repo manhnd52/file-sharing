@@ -2,7 +2,7 @@
 
 
 // Handler for PING command
-void handle_cmd_ping(Conn *c, Frame *f, const char *cmd) {
+void handle_cmd_ping(Conn *c, Frame *f) {
     printf("[CMD:PING][INFO] PING received (fd=%d, user_id=%d, request_id=%d)\n", 
            c->sockfd, c->user_id, f->header.cmd.request_id);
     

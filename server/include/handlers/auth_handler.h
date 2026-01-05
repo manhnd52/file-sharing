@@ -5,10 +5,10 @@
 #include <stdint.h>
 #include "services/folder_service.h"
 
-void handle_login(Conn *c, Frame *f, const char *cmd);
-void handle_register(Conn *c, Frame *f, const char *cmd);
-void handle_auth_token(Conn *c, Frame *f, const char *cmd);
-void handle_logout(Conn *c, Frame *f, const char *cmd);
-void handle_get_me(Conn *c, Frame *f, const char *cmd);
+void handle_login(Conn *c, Frame *f);
+void handle_register(Conn *c, Frame *f);
+void handle_auth_token(Conn *c, Frame *f);
+void handle_logout(Conn *c, Frame *f);
+void handle_get_me(Conn *c, Frame *f);
 
 #endif

@@ -11,8 +11,7 @@
 #include <string.h>
 
 
-void handle_cmd_list_shared_folders(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_list_shared_folders(Conn *c, Frame *f) {
     printf("[CMD:LIST_SHARED_ITEMS][INFO] user_id=%d\n", c->user_id);
 
     cJSON *root = list_shared_items(c->user_id);
@@ -33,9 +32,7 @@ void handle_cmd_list_shared_folders(Conn *c, Frame *f, const char *cmd) {
     cJSON_Delete(root);
 }
 
-void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
-
+void handle_cmd_list(Conn *c, Frame *f) {
     int folder_id = 0;
 
     if (f->payload_len > 0) {
@@ -99,8 +96,7 @@ void handle_cmd_list(Conn *c, Frame *f, const char *cmd) {
     free(json_resp);
 }
 
-void handle_cmd_mkdir(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_mkdir(Conn *c, Frame *f) {
     printf("[CMD:MKDIR][INFO] Processing MKDIR request (fd=%d, user_id=%d, request_id=%d)\n", 
            c->sockfd, c->user_id, f->header.cmd.request_id);
 
@@ -186,8 +182,7 @@ void handle_cmd_mkdir(Conn *c, Frame *f, const char *cmd) {
     cJSON_Delete(resp_root);
 }
 
-void handle_cmd_delete_folder(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_delete_folder(Conn *c, Frame *f) {
     printf("[CMD:DELETE_FOLDER][INFO] user_id=%d\n", c->user_id);
 
     if (!db_global || c->user_id <= 0) {
@@ -279,8 +274,7 @@ void handle_cmd_delete_folder(Conn *c, Frame *f, const char *cmd) {
     send_data(c, resp);
 }
 
-void handle_cmd_share_folder(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_share_folder(Conn *c, Frame *f) {
     printf("[CMD:SHARE_FOLDER][INFO] user_id=%d\n", c->user_id);
 
     if (!db_global || c->user_id <= 0) {
@@ -360,8 +354,7 @@ void handle_cmd_share_folder(Conn *c, Frame *f, const char *cmd) {
     send_data(c, resp);
 }
 
-void handle_cmd_rename_folder(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_rename_folder(Conn *c, Frame *f) {
     printf("[CMD:RENAME_FOLDER][INFO] user_id=%d\n", c->user_id);
 
     if (!db_global || c->user_id <= 0) {

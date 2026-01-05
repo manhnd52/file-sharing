@@ -50,27 +50,6 @@ void router_handle(Conn *c, Frame *req) {
     
     printf("[ROUTER][DEBUG] Received frame: msg_type=%d, request_id=%d (fd=%d, user_id=%d, logged_in=%d)\n", 
            req->msg_type, request_id, c->sockfd, c->user_id, c->logged_in);
-    
-    if (req->msg_type == MSG_AUTH) {
-        if (c->logged_in) {
-            Frame resp;
-            build_respond_frame(&resp, request_id, STATUS_NOT_OK,
-                                "{\"error\":\"already_authed\"}");
-            send_data(c, resp);
-            return;
-        }
-        // If a dedicated AUTH handler is registered, dispatch; else reject
-        if (authHandler) {
-            authHandler(c, req);
-        } else {
-            printf("[ROUTER][ERROR] No AUTH handler registered (fd=%d, request_id=%d)\n", c->sockfd, request_id);
-            Frame resp;
-            build_respond_frame(&resp, request_id, STATUS_NOT_OK,
-                                "{\"error\":\"Server Error\"}");
-            send_data(c, resp);
-        }
-        return;
-    }
 
     // Special handling for CMD type - route by JSON "cmd" field
     if (req->msg_type == MSG_CMD && req->payload_len > 0) {
@@ -86,6 +65,7 @@ void router_handle(Conn *c, Frame *req) {
         }
 
         cJSON *cmd_item = cJSON_GetObjectItem(root, "cmd");
+
         if (!cmd_item || !cJSON_IsString(cmd_item)) {
             Frame resp;
             build_respond_frame(&resp, req->header.cmd.request_id, STATUS_NOT_OK,
@@ -121,7 +101,7 @@ void router_handle(Conn *c, Frame *req) {
             // Find matching CMD handler
             for (int i = 0; i < cmd_route_count; i++) {
                 if (strcmp(cmd_routes[i].cmd, cmd) == 0) {
-                    cmd_routes[i].handler(c, req, cmd);
+                    cmd_routes[i].handler(c, req);
                     return;
                 }
             }

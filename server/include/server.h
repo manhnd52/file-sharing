@@ -25,7 +25,6 @@ typedef struct {
   char auth_token[256];
   time_t auth_expiry;
 
-  bool busy_worker;
   uint8_t buf[BUF_SIZE];
   size_t buf_len;
 } Conn;

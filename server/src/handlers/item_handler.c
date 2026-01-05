@@ -7,8 +7,7 @@
 #include <string.h>
 
 // List permissions for target (folder/file)
-void handle_cmd_list_permissions(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_list_permissions(Conn *c, Frame *f) {
     if (!db_global || c->user_id <= 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
@@ -55,8 +54,7 @@ void handle_cmd_list_permissions(Conn *c, Frame *f, const char *cmd) {
 }
 
 // Update permission for a target
-void handle_cmd_update_permission(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_cmd_update_permission(Conn *c, Frame *f) {
     if (!db_global || c->user_id <= 0) {
         Frame resp;
         build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,

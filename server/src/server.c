@@ -77,12 +77,6 @@ static void conn_init(Conn *c, int sockfd) {
   // Set socket options for reliable communication
   int opt = 1;
   setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
-  
-  // Set receive timeout to prevent indefinite blocking
-  struct timeval timeout;
-  timeout.tv_sec = 30;  // 30 seconds
-  timeout.tv_usec = 0;
-  setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
 }
 
 static void conn_cleanup(Conn *c) {

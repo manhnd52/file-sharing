@@ -11,8 +11,7 @@
 #include <time.h>
 #include <time.h>
 
-void handle_login(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_login(Conn *c, Frame *f) {
     if (!c || !f || f->msg_type != MSG_CMD) {
         printf("[AUTH:LOGIN][ERROR] Invalid frame type for login (fd=%d, msg_type=%d)\n", 
                c ? c->sockfd : -1, f ? f->msg_type : -1);
@@ -114,8 +113,7 @@ void handle_login(Conn *c, Frame *f, const char *cmd) {
 }
 
 
-void handle_register(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_register(Conn *c, Frame *f) {
 
     if (!c || !f || f->msg_type != MSG_CMD) {
         printf("[AUTH:REGISTER][ERROR] Invalid frame type (fd=%d, msg_type=%d)\n",
@@ -193,8 +191,7 @@ void handle_register(Conn *c, Frame *f, const char *cmd) {
     cJSON_Delete(root);
 }
 
-void handle_auth_token(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_auth_token(Conn *c, Frame *f) {
 
     if (!c || !f || f->msg_type != MSG_CMD) {
         printf("[AUTH:AUTH][ERROR] Invalid frame type (fd=%d, msg_type=%d)\n",
@@ -269,8 +266,7 @@ void handle_auth_token(Conn *c, Frame *f, const char *cmd) {
     cJSON_Delete(root);
 }
 
-void handle_logout(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
+void handle_logout(Conn *c, Frame *f) {
 
     if (!c || !f || f->msg_type != MSG_CMD) {
         printf("[AUTH:LOGOUT][ERROR] Invalid frame type (fd=%d, msg_type=%d)\n",
@@ -302,9 +298,7 @@ void handle_logout(Conn *c, Frame *f, const char *cmd) {
     printf("[AUTH:LOGOUT][INFO] User logged out (fd=%d)\n", c->sockfd);
 }
 
-void handle_get_me(Conn *c, Frame *f, const char *cmd) {
-    (void)cmd;
-
+void handle_get_me(Conn *c, Frame *f) {
     if (!c || !f || f->msg_type != MSG_CMD) {
         printf("[AUTH:GET_ME][ERROR] Invalid frame type (fd=%d, msg_type=%d)\n",
                c ? c->sockfd : -1, f ? f->msg_type : -1);
