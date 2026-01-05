@@ -4,9 +4,9 @@ from ctypes import CDLL, c_char_p, c_uint16, c_int, c_size_t, create_string_buff
 from enum import Enum
 from typing import Callable, Tuple
 
-DEFAULT_HOST = os.environ.get("FS_HOST", "127.0.0.1")
+DEFAULT_HOST = os.environ.get("FS_HOST", "192.168.1.81")
 DEFAULT_PORT = int(os.environ.get("FS_PORT", "5555"))
-DEFAULT_TIMEOUT = int(os.environ.get("FS_TIMEOUT", "5"))
+DEFAULT_TIMEOUT = int(os.environ.get("FS_TIMEOUT", "10"))
 
 def _load_library():
     cand = [
