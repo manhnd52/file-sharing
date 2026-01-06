@@ -12,5 +12,7 @@ int folder_rename(int owner_id, int folder_id, const char* new_name); // 0 ok, -
 int delete_folder(int folder_id, int actor_id); 
 
 cJSON* get_folder_info(int folder_id);
+cJSON* search_folders(int user_id, const char *keyword);
+int copy_folder(int actor_id, int src_folder_id, int dest_folder_id, int *out_new_id);
 
 #endif 

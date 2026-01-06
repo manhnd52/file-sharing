@@ -10,5 +10,7 @@ void handle_cmd_mkdir(Conn *c, Frame *f);
 void handle_cmd_delete_folder(Conn *c, Frame *f);
 void handle_cmd_share_folder(Conn *c, Frame *f);
 void handle_cmd_rename_folder(Conn *c, Frame *f);
+void handle_cmd_search_folders(Conn *c, Frame *f);
+void handle_cmd_copy_folder(Conn *c, Frame *f);
 
 #endif

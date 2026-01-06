@@ -41,6 +41,7 @@ class MainController:
         self._download_target = None  # (item, dest_dir)
         self._upload_dialog = None
         self._upload_target = None  # (file_path, parent_folder_id)
+        self._clipboard = None
 
         self.view.request_context_menu.connect(self.on_context_menu)
         self.view.request_share.connect(self.on_share)
@@ -54,6 +55,8 @@ class MainController:
         self.view.request_rename.connect(self.on_rename_item)
         self.view.request_download.connect(self.on_download_item)
         self.view.request_search.connect(self.on_search)
+        self.view.request_copy.connect(self.on_copy_item)
+        self.view.request_paste.connect(self.on_paste_item)
 
         self.load()
 
@@ -381,5 +384,44 @@ class MainController:
         self.view.set_home_enabled(self.main_binder.current_folder_id != self.main_binder.root_folder_id)
 
     def on_search(self, keyword: str):
-        filtered = self.main_binder.search(keyword)
-        self.view.set_table_data(filtered)
+        self._search_seq = getattr(self, "_search_seq", 0) + 1
+        current_seq = self._search_seq
+        def handle(result):
+            if current_seq != getattr(self, "_search_seq", 0):
+                return
+            self.view.set_table_data(result)
+        self._run_task(
+            "Đang tìm kiếm...",
+            lambda: self.main_binder.search(keyword),
+            handle,
+            show_loading=False,
+        )
+
+    def on_copy_item(self, item):
+        if not item:
+            return
+        self._clipboard = {
+            "id": item.get("id"),
+            "is_folder": item.get("is_folder", False),
+            "name": item.get("name", "")
+        }
+        self.view.set_paste_enabled(True)
+
+    def on_paste_item(self):
+        if not getattr(self, "_clipboard", None):
+            return
+        clip = dict(self._clipboard)
+        dest_folder = self.main_binder.current_folder_id
+
+        def handle(result):
+            success, msg = result
+            if success:
+                QMessageBox.information(self.view, "Dán", msg)
+            else:
+                QMessageBox.warning(self.view, "Dán", msg or "Sao chép thất bại")
+            self.reload()
+        self._run_task(
+            "Đang sao chép...",
+            lambda: self.main_binder.copy_item(clip, dest_folder),
+            handle
+        )

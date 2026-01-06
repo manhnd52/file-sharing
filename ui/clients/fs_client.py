@@ -49,6 +49,8 @@ lib.fs_delete_folder_json.argtypes = [c_int, c_char_p, c_size_t]
 lib.fs_delete_folder_json.restype = c_int
 lib.fs_delete_file_json.argtypes = [c_int, c_char_p, c_size_t]
 lib.fs_delete_file_json.restype = c_int
+lib.fs_copy_file_json.argtypes = [c_int, c_int, c_char_p, c_size_t]
+lib.fs_copy_file_json.restype = c_int
 lib.fs_list_shared_items_json.argtypes = [c_char_p, c_size_t]
 lib.fs_list_shared_items_json.restype = c_int
 lib.fs_share_folder_json.argtypes = [c_int, c_char_p, c_int, c_char_p, c_size_t]
@@ -59,6 +61,8 @@ lib.fs_rename_folder_json.argtypes = [c_int, c_char_p, c_char_p, c_size_t]
 lib.fs_rename_folder_json.restype = c_int
 lib.fs_rename_file_json.argtypes = [c_int, c_char_p, c_char_p, c_size_t]
 lib.fs_rename_file_json.restype = c_int
+lib.fs_copy_folder_json.argtypes = [c_int, c_int, c_char_p, c_size_t]
+lib.fs_copy_folder_json.restype = c_int
 lib.fs_list_folder_permissions_json.argtypes = [c_int, c_char_p, c_size_t]
 lib.fs_list_folder_permissions_json.restype = c_int
 lib.fs_list_file_permissions_json.argtypes = [c_int, c_char_p, c_size_t]
@@ -81,6 +85,10 @@ lib.fs_resume_download_json.argtypes = [c_char_p, c_size_t]
 lib.fs_resume_download_json.restype = c_int
 lib.fs_resume_upload_json.argtypes = [c_char_p, c_size_t]
 lib.fs_resume_upload_json.restype = c_int
+lib.fs_search_folders_json.argtypes = [c_char_p, c_char_p, c_size_t]
+lib.fs_search_folders_json.restype = c_int
+lib.fs_search_files_json.argtypes = [c_char_p, c_char_p, c_size_t]
+lib.fs_search_files_json.restype = c_int
 
 _connected = False
 
@@ -179,6 +187,11 @@ def rename_file(file_id, new_name):
         return RequestResult.ERROR, ""
     return _call_json(lib.fs_rename_file_json, c_int(file_id), new_name.encode())
 
+def copy_file(file_id, dest_folder_id):
+    if not ensure_connected():
+        return RequestResult.ERROR, ""
+    return _call_json(lib.fs_copy_file_json, c_int(file_id), c_int(dest_folder_id))
+
 def list_folder_permissions(folder_id):
     if not ensure_connected():
         return RequestResult.ERROR, ""
@@ -198,6 +211,11 @@ def update_file_permission(file_id, username, permission):
     if not ensure_connected():
         return RequestResult.ERROR, ""
     return _call_json(lib.fs_update_file_permission_json, c_int(file_id), username.encode(), c_int(permission))
+
+def copy_folder(folder_id, dest_folder_id):
+    if not ensure_connected():
+        return RequestResult.ERROR, ""
+    return _call_json(lib.fs_copy_folder_json, c_int(folder_id), c_int(dest_folder_id))
 
 def upload_file(file_path, parent_folder_id):
     if not ensure_connected():
@@ -233,3 +251,36 @@ def resume_upload():
     if not ensure_connected():
         return RequestResult.ERROR, ""
     return _call_json(lib.fs_resume_upload_json)
+
+def search(keyword: str):
+    if not keyword:
+        return RequestResult.ERROR, ""
+    if not ensure_connected():
+        return RequestResult.ERROR, ""
+
+    # call folders
+    buf = create_string_buffer(4096)
+    rc_f = lib.fs_search_folders_json(keyword.encode(), buf, len(buf))
+    folders_raw = buf.value.decode(errors="ignore") if rc_f == 0 else ""
+
+    buf2 = create_string_buffer(4096)
+    rc_file = lib.fs_search_files_json(keyword.encode(), buf2, len(buf2))
+    files_raw = buf2.value.decode(errors="ignore") if rc_file == 0 else ""
+
+    try:
+        items = []
+        if folders_raw:
+            payload = json.loads(folders_raw)
+            if isinstance(payload, dict):
+                items.extend(payload.get("items", []))
+        if files_raw:
+            payload = json.loads(files_raw)
+            if isinstance(payload, dict):
+                items.extend(payload.get("items", []))
+        merged = {"status": "ok", "items": items}
+        # Propagate most severe rc
+        rc = rc_f if rc_f != 0 else rc_file
+        result = RequestResult(rc) if rc in (-2, -1, 0) else RequestResult.ERROR
+        return result, json.dumps(merged)
+    except json.JSONDecodeError:
+        return RequestResult.ERROR, ""

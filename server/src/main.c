@@ -32,12 +32,16 @@ int main() {
     register_cmd_route("MKDIR", handle_cmd_mkdir);
     register_cmd_route("DELETE_FOLDER", handle_cmd_delete_folder);
     register_cmd_route("DELETE_FILE", handle_cmd_delete_file);
+    register_cmd_route("COPY_FOLDER", handle_cmd_copy_folder);
+    register_cmd_route("COPY_FILE", handle_cmd_copy_file);
     register_cmd_route("SHARE_FOLDER", handle_cmd_share_folder);
     register_cmd_route("SHARE_FILE", handle_cmd_share_file);
     register_cmd_route("LIST_PERMISSIONS", handle_cmd_list_permissions);
     register_cmd_route("UPDATE_PERMISSION", handle_cmd_update_permission);
     register_cmd_route("RENAME_FOLDER", handle_cmd_rename_folder);
     register_cmd_route("RENAME_FILE", handle_cmd_rename_file);
+    register_cmd_route("SEARCH_FOLDERS", handle_cmd_search_folders);
+    register_cmd_route("SEARCH_FILES", handle_cmd_search_files);
 
     register_cmd_route("LIST_SHARED_ITEMS", handle_cmd_list_shared_folders);
 

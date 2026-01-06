@@ -1,8 +1,11 @@
 #include "services/file_service.h"
 #include "database.h"
 #include "services/permission_service.h"
+#include "cJSON.h"
 #include <sqlite3.h>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 // Lưu metadata file
 int file_save_metadata(int owner_id, int parent_folder_id, const char* file_name, const char* storage_hash, uint64_t size) { 
@@ -168,6 +171,19 @@ int delete_file(int file_id) {
     sqlite3_finalize(stmt_perm);
 
     const char* sql_delete_file = "DELETE FROM files WHERE id = ?";
+    // Grab storage_hash before deletion
+    const char *sql_hash = "SELECT storage_hash FROM files WHERE id = ?";
+    char hash_buf[256] = {0};
+    rc = sqlite3_prepare_v2(db_global, sql_hash, -1, &stmt, NULL);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, file_id);
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
+            const unsigned char *h = sqlite3_column_text(stmt, 0);
+            if (h) snprintf(hash_buf, sizeof(hash_buf), "%s", h);
+        }
+        sqlite3_finalize(stmt);
+    }
+
     rc = sqlite3_prepare_v2(db_global, sql_delete_file, -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         sqlite3_exec(db_global, "ROLLBACK;", NULL, NULL, NULL);
@@ -187,6 +203,24 @@ int delete_file(int file_id) {
     if (rc != SQLITE_OK) {
         sqlite3_exec(db_global, "ROLLBACK;", NULL, NULL, NULL);
         return 0;
+    }
+
+    // GC storage_hash if orphaned
+    if (hash_buf[0] != '\0') {
+        const char *sql_count = "SELECT COUNT(1) FROM files WHERE storage_hash = ?";
+        int count = 1;
+        if (sqlite3_prepare_v2(db_global, sql_count, -1, &stmt, NULL) == SQLITE_OK) {
+            sqlite3_bind_text(stmt, 1, hash_buf, -1, SQLITE_TRANSIENT);
+            if (sqlite3_step(stmt) == SQLITE_ROW) {
+                count = sqlite3_column_int(stmt, 0);
+            }
+        }
+        sqlite3_finalize(stmt);
+        if (count == 0) {
+            char path[512];
+            snprintf(path, sizeof(path), "data/storage/%s", hash_buf);
+            unlink(path);
+        }
     }
 
     return 1; 
@@ -240,4 +274,125 @@ int file_rename(int actor_id, int file_id, const char* new_name) {
     int rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
     return (rc == SQLITE_DONE) ? 0 : -3;
+}
+
+cJSON* search_files(int user_id, const char *keyword) {
+    if (!db_global || user_id <= 0 || !keyword) return NULL;
+
+    char pattern[256];
+    if (snprintf(pattern, sizeof(pattern), "%%%s%%", keyword) >= (int)sizeof(pattern)) {
+        return NULL;
+    }
+
+    cJSON *items = cJSON_CreateArray();
+    if (!items) return NULL;
+
+    const char *sql =
+        "SELECT fi.id, fi.name, fi.owner_id, u.username, fi.size, fi.folder_id "
+        "FROM files fi JOIN users u ON fi.owner_id = u.id "
+        "WHERE lower(fi.name) LIKE lower(?) "
+        "ORDER BY fi.id";
+
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, pattern, -1, SQLITE_TRANSIENT);
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            int id = sqlite3_column_int(stmt, 0);
+            const unsigned char *name = sqlite3_column_text(stmt, 1);
+            int owner_id = sqlite3_column_int(stmt, 2);
+            const unsigned char *owner_name = sqlite3_column_text(stmt, 3);
+            sqlite3_int64 size = sqlite3_column_int64(stmt, 4);
+            int folder_id = sqlite3_column_int(stmt, 5);
+
+            PermissionLevel perm = get_file_permission(user_id, id);
+            if (perm < PERM_READ) continue;
+
+            cJSON *item = cJSON_CreateObject();
+            cJSON_AddNumberToObject(item, "id", id);
+            cJSON_AddStringToObject(item, "name", name ? (const char *)name : "");
+            cJSON_AddNumberToObject(item, "owner_id", owner_id);
+            cJSON_AddStringToObject(item, "owner_name", owner_name ? (const char *)owner_name : "");
+            cJSON_AddNumberToObject(item, "permission", perm);
+            cJSON_AddNumberToObject(item, "size", (double)size);
+            cJSON_AddNumberToObject(item, "folder_id", folder_id);
+            cJSON_AddStringToObject(item, "type", "file");
+            cJSON_AddItemToArray(items, item);
+        }
+        sqlite3_finalize(stmt);
+    }
+
+    return items;
+}
+
+static int name_exists_in_folder(const char *name, int folder_id) {
+    sqlite3_stmt *stmt = NULL;
+    int exists = 0;
+    const char *sql = "SELECT 1 FROM files WHERE folder_id = ? AND name = ? LIMIT 1";
+    if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_int(stmt, 1, folder_id);
+        sqlite3_bind_text(stmt, 2, name, -1, SQLITE_TRANSIENT);
+        if (sqlite3_step(stmt) == SQLITE_ROW) exists = 1;
+    }
+    sqlite3_finalize(stmt);
+    return exists;
+}
+
+static void make_unique_name(char *name_buf, size_t buf_size, int folder_id) {
+    if (!name_buf || buf_size == 0) return;
+    if (!name_exists_in_folder(name_buf, folder_id)) return;
+    int counter = 1;
+    char base[256];
+    snprintf(base, sizeof(base), "%s", name_buf);
+    do {
+        snprintf(name_buf, buf_size, "%s_copy%d", base, counter++);
+    } while (name_exists_in_folder(name_buf, folder_id) && counter < 1000);
+}
+
+int copy_file(int actor_id, int file_id, int dest_folder_id, int *out_new_id) {
+    if (!db_global || actor_id <= 0 || file_id <= 0 || dest_folder_id <= 0) return -1;
+    if (!authorize_file_access(actor_id, file_id, PERM_WRITE)) return -1;
+    if (!authorize_folder_access(actor_id, dest_folder_id, PERM_WRITE)) return -2;
+
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "SELECT name, storage_hash, size FROM files WHERE id = ?";
+    if (sqlite3_prepare_v2(db_global, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        return -3;
+    }
+    sqlite3_bind_int(stmt, 1, file_id);
+    char name[256] = {0};
+    char storage_hash[256] = {0};
+    sqlite3_int64 size = 0;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const unsigned char *n = sqlite3_column_text(stmt, 0);
+        const unsigned char *h = sqlite3_column_text(stmt, 1);
+        if (n) snprintf(name, sizeof(name), "%s", n);
+        if (h) snprintf(storage_hash, sizeof(storage_hash), "%s", h);
+        size = sqlite3_column_int64(stmt, 2);
+    } else {
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    sqlite3_finalize(stmt);
+
+    if (name[0] == '\0' || storage_hash[0] == '\0') return -1;
+    make_unique_name(name, sizeof(name), dest_folder_id);
+
+    const char* sql_insert =
+        "INSERT INTO files(name, folder_id, owner_id, storage_hash, size) "
+        "VALUES(?, ?, ?, ?, ?)";
+    if (sqlite3_prepare_v2(db_global, sql_insert, -1, &stmt, NULL) != SQLITE_OK) {
+        return -3;
+    }
+    sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, 2, dest_folder_id);
+    sqlite3_bind_int(stmt, 3, actor_id);
+    sqlite3_bind_text(stmt, 4, storage_hash, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 5, size);
+
+    int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) return -3;
+    if (out_new_id) *out_new_id = (int)sqlite3_last_insert_rowid(db_global);
+    return 0;
 }

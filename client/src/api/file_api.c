@@ -42,3 +42,21 @@ int list_shared_items_api(Frame *resp) {
     cJSON_AddStringToObject(json, "cmd", "LIST_SHARED_ITEMS");
     return send_json_cmd(json, resp);
 }
+
+int search_file_api(const char *keyword, Frame *resp) {
+    if (!keyword || !resp) return REQ_ERROR;
+    cJSON *json = cJSON_CreateObject();
+    if (!json) return REQ_ERROR;
+    cJSON_AddStringToObject(json, "cmd", "SEARCH_FILES");
+    cJSON_AddStringToObject(json, "keyword", keyword);
+    return send_json_cmd(json, resp);
+}
+
+int copy_file_api(int file_id, int dest_folder_id, Frame *resp) {
+    cJSON *json = cJSON_CreateObject();
+    if (!json) return -1;
+    cJSON_AddStringToObject(json, "cmd", "COPY_FILE");
+    cJSON_AddNumberToObject(json, "file_id", file_id);
+    cJSON_AddNumberToObject(json, "dest_folder_id", dest_folder_id);
+    return send_json_cmd(json, resp);
+}

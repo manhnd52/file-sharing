@@ -13,5 +13,7 @@ int file_share_with_user(int owner_id, int file_id, const char* username, int pe
 int delete_file(int file_id);
 int file_get_owner(int file_id);
 int file_rename(int owner_id, int file_id, const char* new_name);    // 0 ok, -1 not found/not owner, -2 invalid, -3 db
+cJSON* search_files(int user_id, const char *keyword);
+int copy_file(int actor_id, int file_id, int dest_folder_id, int *out_new_id);
 
 #endif // FILE_SERVICE_H

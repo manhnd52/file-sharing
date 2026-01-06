@@ -24,6 +24,7 @@ int fs_mkdir_json(int parent_id, const char *name, char *out_buf, size_t out_len
 
 int fs_delete_folder_json(int folder_id, char *out_buf, size_t out_len);
 int fs_delete_file_json(int file_id, char *out_buf, size_t out_len);
+int fs_copy_file_json(int file_id, int dest_folder_id, char *out_buf, size_t out_len);
 
 int fs_share_folder_json(int folder_id, const char *username, int permission,
                          char *out_buf, size_t out_len);
@@ -33,6 +34,7 @@ int fs_rename_folder_json(int folder_id, const char *new_name,
                         char *out_buf, size_t out_len);
 int fs_rename_file_json(int file_id, const char *new_name,
                         char *out_buf, size_t out_len);
+int fs_copy_folder_json(int folder_id, int dest_folder_id, char *out_buf, size_t out_len);
 int fs_list_folder_permissions_json(int folder_id, char *out_buf, size_t out_len);
 int fs_list_file_permissions_json(int file_id, char *out_buf, size_t out_len);
 int fs_update_folder_permission_json(int folder_id, const char *username, int permission,
@@ -46,5 +48,7 @@ int fs_cancel_download_json(const char *session_id, char *out_buf, size_t out_le
 int fs_resume_download_json(char *out_buf, size_t out_len);
 int fs_cancel_upload_json(const char *session_id, char *out_buf, size_t out_len);
 int fs_resume_upload_json(char *out_buf, size_t out_len);
+int fs_search_folders_json(const char *keyword, char *out_buf, size_t out_len);
+int fs_search_files_json(const char *keyword, char *out_buf, size_t out_len);
 
 #endif

@@ -117,8 +117,35 @@ class MainBinder:
     def search(self, keyword: str):
         if not keyword:
             return list(self._last_data)
-        kw = keyword.lower()
-        return [item for item in self._last_data if kw in item.get("name", "").lower()]
+        icon_folder = self.style.standardIcon(QStyle.SP_DirIcon)
+        icon_file = self.style.standardIcon(QStyle.SP_FileIcon)
+        request_result, resp = fs_client.search(keyword)
+        if request_result != RequestResult.OK:
+            if request_result == RequestResult.NOT_RESPONSE:
+                self.isDisconnected = True
+            return []
+        try:
+            payload = json.loads(resp) if resp else {}
+        except json.JSONDecodeError:
+            return []
+
+        data = []
+        for item in payload.get("items", []):
+            is_folder = item.get("type") == "folder"
+            owner_display = item.get("owner_name") or str(item.get("owner_id", ""))
+            perm_val = item.get("permission", 0)
+            data.append({
+                "id": item.get("id"),
+                "name": item.get("name", ""),
+                "owner": owner_display,
+                "time": "",
+                "size": "-" if is_folder else self._format_size(item.get("size")),
+                "is_folder": is_folder,
+                "icon": icon_folder if is_folder else icon_file,
+                "is_shared": perm_val < 2,
+                "permission": perm_val,
+            })
+        return data
 
     def create_folder(self, name: str) -> tuple[bool, str]:
         if not name:
@@ -165,6 +192,27 @@ class MainBinder:
             except json.JSONDecodeError:
                 return False, "Đổi tên thất bại"
         return True, "Đổi tên thành công"
+
+    def copy_item(self, item, dest_folder_id: int) -> tuple[bool, str]:
+        if not item or dest_folder_id <= 0:
+            return False, "Thiếu thông tin sao chép"
+        if item.get("is_folder"):
+            request_result, resp = fs_client.copy_folder(item.get("id", 0), dest_folder_id)
+        else:
+            request_result, resp = fs_client.copy_file(item.get("id", 0), dest_folder_id)
+        if request_result != RequestResult.OK:
+            if request_result == RequestResult.NOT_RESPONSE:
+                self.isDisconnected = True
+            try:
+                data = json.loads(resp) if resp else {}
+                return False, data.get("error", "Sao chép thất bại")
+            except json.JSONDecodeError:
+                return False, "Sao chép thất bại"
+        try:
+            data = json.loads(resp) if resp else {}
+            return True, data.get("message", "Sao chép thành công")
+        except json.JSONDecodeError:
+            return True, "Sao chép thành công"
 
     def upload_file(self, path) -> tuple[bool, str]:
         if not path:

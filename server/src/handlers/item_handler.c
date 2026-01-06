@@ -2,6 +2,7 @@
 #include "cJSON.h"
 #include "database.h"
 #include "services/item_service.h"
+#include "services/permission_service.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

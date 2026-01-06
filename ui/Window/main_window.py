@@ -10,6 +10,8 @@ from styles import APP_STYLE
 
 class MainWindow(QMainWindow):
     request_context_menu = pyqtSignal(int)
+    request_copy = pyqtSignal(object)
+    request_paste = pyqtSignal()
     request_share = pyqtSignal(object)
     request_create_folder = pyqtSignal()
     request_upload_file = pyqtSignal()
@@ -33,6 +35,7 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         self._apply_style()
+        self._can_paste = False
 
     # ---------- UI ----------
     def _init_ui(self):
@@ -144,18 +147,23 @@ class MainWindow(QMainWindow):
         perm = data.get("permission", 2)
         can_write = perm >= 2
         can_share = perm >= 2
+        can_copy = perm >= 2
 
         menu = QMenu(self)
         download = QAction("Tải xuống", self)
         rename = QAction("Đổi tên", self)
         share = QAction("Chia sẻ", self)
         delete = QAction("Xóa", self)
+        copy_act = QAction("Sao chép", self)
 
         download.triggered.connect(lambda: self.request_download.emit(data))
         menu.addAction(download)
         rename.setEnabled(can_write)
         rename.triggered.connect(lambda: self.request_rename.emit(data))
         menu.addAction(rename)
+        copy_act.setEnabled(can_copy)
+        copy_act.triggered.connect(lambda: self.request_copy.emit(data))
+        menu.addAction(copy_act)
         share.setEnabled(can_share)
         share.triggered.connect(lambda: self.request_share.emit(data))
         menu.addAction(share)
@@ -172,12 +180,17 @@ class MainWindow(QMainWindow):
         create_folder = QAction("Tạo thư mục mới", self)
         upload_file = QAction("Tải lên tệp", self)
         upload_folder = QAction("Tải lên thư muc", self)
+        paste_action = QAction("Dán", self)
         create_folder.triggered.connect(self.request_create_folder.emit)
         upload_file.triggered.connect(self.request_upload_file.emit)
         upload_folder.triggered.connect(self.request_upload_folder.emit)
         menu.addAction(create_folder)
         menu.addAction(upload_file)
         menu.addAction(upload_folder)
+        if self._can_paste:
+            menu.addSeparator()
+            paste_action.triggered.connect(self.request_paste.emit)
+            menu.addAction(paste_action)
         menu.exec_(self.cursor().pos())
 
     def _on_double_click(self, item):
@@ -208,6 +221,10 @@ class MainWindow(QMainWindow):
             return
         self._loading_dialog.hide()
         QApplication.processEvents()
+
+    def set_paste_enabled(self, enabled: bool):
+        self._can_paste = enabled
+
     def _on_search_changed(self, text: str):
         self.request_search.emit(text)
 

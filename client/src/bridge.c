@@ -94,6 +94,12 @@ int fs_delete_file_json(int file_id, char *out_buf, size_t out_len) {
     return handle_respond(rc, &res, out_buf, out_len);
 }
 
+int fs_copy_file_json(int file_id, int dest_folder_id, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = copy_file_api(file_id, dest_folder_id, &res);
+    return handle_respond(rc, &res, out_buf, out_len);
+}
+
 int fs_share_folder_json(int folder_id, const char *username, int permission,
                          char *out_buf, size_t out_len) {
     Frame res = {0};
@@ -119,6 +125,12 @@ int fs_rename_file_json(int file_id, const char *new_name,
                         char *out_buf, size_t out_len) {
     Frame res = {0};
     int rc = rename_file_api(file_id, new_name, &res);
+    return handle_respond(rc, &res, out_buf, out_len);
+}
+
+int fs_copy_folder_json(int folder_id, int dest_folder_id, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = copy_folder_api(folder_id, dest_folder_id, &res);
     return handle_respond(rc, &res, out_buf, out_len);
 }
 
@@ -187,5 +199,17 @@ int fs_cancel_upload_json(const char *session_id, char *out_buf, size_t out_len)
 int fs_resume_upload_json(char *out_buf, size_t out_len) {
     Frame res = {0};
     int rc = upload_resume_api(&res);
+    return handle_respond(rc, &res, out_buf, out_len);
+}
+
+int fs_search_folders_json(const char *keyword, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = search_api_folder(keyword, &res);
+    return handle_respond(rc, &res, out_buf, out_len);
+}
+
+int fs_search_files_json(const char *keyword, char *out_buf, size_t out_len) {
+    Frame res = {0};
+    int rc = search_file_api(keyword, &res);
     return handle_respond(rc, &res, out_buf, out_len);
 }

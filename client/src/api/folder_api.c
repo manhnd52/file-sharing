@@ -54,3 +54,24 @@ int rename_folder_api(int folder_id, const char *new_name, Frame *resp) {
     cJSON_AddStringToObject(json, "new_name", new_name ? new_name : "");
     return send_json_cmd(json, resp);
 }
+
+int search_api_folder(const char *keyword, Frame *resp) {
+    if (!keyword || !resp) return REQ_ERROR;
+
+    cJSON *json = cJSON_CreateObject();
+    if (!json) return REQ_ERROR;
+
+    cJSON_AddStringToObject(json, "cmd", "SEARCH_FOLDERS");
+    cJSON_AddStringToObject(json, "keyword", keyword);
+
+    return send_json_cmd(json, resp);
+}
+
+int copy_folder_api(int folder_id, int dest_folder_id, Frame *resp) {
+    cJSON *json = cJSON_CreateObject();
+    if (!json) return -1;
+    cJSON_AddStringToObject(json, "cmd", "COPY_FOLDER");
+    cJSON_AddNumberToObject(json, "folder_id", folder_id);
+    cJSON_AddNumberToObject(json, "dest_folder_id", dest_folder_id);
+    return send_json_cmd(json, resp);
+}

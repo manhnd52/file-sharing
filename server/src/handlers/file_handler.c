@@ -5,6 +5,7 @@
 #include "services/permission_service.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 void handle_cmd_delete_file(Conn *c, Frame *f) {
     printf("[CMD:DELETE_FILE][INFO] user_id=%d\n", c->user_id);
@@ -85,6 +86,116 @@ void handle_cmd_delete_file(Conn *c, Frame *f) {
     build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK,
                         "{\"status\":\"ok\"}");
     send_data(c, resp);
+}
+
+void handle_cmd_copy_file(Conn *c, Frame *f) {
+    if (!db_global || c->user_id <= 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authenticated\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *root = cJSON_Parse((char *)f->payload);
+    if (!root) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"invalid_json\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *id_item = cJSON_GetObjectItemCaseSensitive(root, "file_id");
+    cJSON *dest_item = cJSON_GetObjectItemCaseSensitive(root, "dest_folder_id");
+    if (!cJSON_IsNumber(id_item) || !cJSON_IsNumber(dest_item)) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"missing_fields\"}");
+        send_data(c, resp);
+        cJSON_Delete(root);
+        return;
+    }
+    int file_id = id_item->valueint;
+    int dest_folder_id = dest_item->valueint;
+    cJSON_Delete(root);
+
+    int new_id = 0;
+    int rc = copy_file(c->user_id, file_id, dest_folder_id, &new_id);
+    if (rc != 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"copy_failed\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *resp_root = cJSON_CreateObject();
+    cJSON_AddStringToObject(resp_root, "status", "ok");
+    cJSON_AddNumberToObject(resp_root, "id", new_id);
+    char *json_resp = cJSON_PrintUnformatted(resp_root);
+    cJSON_Delete(resp_root);
+    Frame resp;
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
+    send_data(c, resp);
+    free(json_resp);
+}
+
+static int parse_keyword(Frame *f, char *out, size_t out_size) {
+    if (!f || f->payload_len == 0 || !out || out_size == 0) return 0;
+    cJSON *root = cJSON_Parse((char *)f->payload);
+    if (!root) return 0;
+    cJSON *kw_item = cJSON_GetObjectItemCaseSensitive(root, "keyword");
+    int ok = 0;
+    if (cJSON_IsString(kw_item) && kw_item->valuestring && kw_item->valuestring[0] != '\0') {
+        snprintf(out, out_size, "%s", kw_item->valuestring);
+        ok = 1;
+    }
+    cJSON_Delete(root);
+    return ok;
+}
+
+static void respond_items(Conn *c, Frame *f, cJSON *items) {
+    if (!items) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"server_error\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddItemToObject(root, "items", items);
+    cJSON_AddStringToObject(root, "status", "ok");
+    char *json_resp = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!json_resp) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"server_error\"}");
+        send_data(c, resp);
+        return;
+    }
+    Frame resp;
+    build_respond_frame(&resp, f->header.cmd.request_id, STATUS_OK, json_resp);
+    send_data(c, resp);
+    free(json_resp);
+}
+
+void handle_cmd_search_files(Conn *c, Frame *f) {
+    if (!db_global || c->user_id <= 0) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"not_authenticated\"}");
+        send_data(c, resp);
+        return;
+    }
+    char kw[256] = {0};
+    if (!parse_keyword(f, kw, sizeof(kw))) {
+        Frame resp;
+        build_respond_frame(&resp, f->header.cmd.request_id, STATUS_NOT_OK,
+                            "{\"error\":\"missing_keyword\"}");
+        send_data(c, resp);
+        return;
+    }
+    cJSON *items = search_files(c->user_id, kw);
+    respond_items(c, f, items);
 }
 
 void handle_cmd_share_file(Conn *c, Frame *f) {
